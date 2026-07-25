@@ -895,11 +895,27 @@ if (-not [IO.Path]::IsPathRooted($OutputPath)) {
 $OutputPath = [IO.Path]::GetFullPath($OutputPath)
 
 Write-Host ''
-Write-Host 'RB All Updater - Legacy Forge 1.20.1 -> NeoForge 26.2 (EXPERIMENTAL)' -ForegroundColor White
+Write-Host 'Legacy Java Converter - Forge 1.20.1 -> NeoForge 26.2 (EXPERIMENTAL)' -ForegroundColor White
 Write-Host "  Source : $Source"
 Write-Host "  Output : $OutputPath"
 Write-Host "  Target : Minecraft $MinecraftVersion / NeoForge $NeoVersion"
-if ($DryRun) { Write-Host '  DryRun : yes' -ForegroundColor Yellow; throw 'DryRun not fully implemented for legacy path - omit -DryRun' }
+if ($DryRun) {
+    Write-Host '  DryRun : yes (preview only — no files written)' -ForegroundColor Yellow
+    Write-Host ''
+    Write-Host 'Would perform:' -ForegroundColor Cyan
+    Write-Host "  1. Copy project tree from source -> output (excluding build/.gradle/.git)"
+    Write-Host "  2. Write ModDevGradle 26.2 scaffold (build.gradle, settings.gradle, gradle.properties, mods.toml)"
+    Write-Host "  3. Mechanical Forge->NeoForge rewrites + 26.2 API pass + registry/event bootstrap"
+    Write-Host "  4. Client item stubs + Gradle wrapper bootstrap when available"
+    if ($Compile) { Write-Host "  5. Run compileJava (diagnostic)" }
+    Write-Host ''
+    Write-Host "Source has src/: $((Test-Path (Join-Path $Source 'src')))" -ForegroundColor Green
+    $javaCount = @(Get-ChildItem (Join-Path $Source 'src') -Recurse -Filter '*.java' -File -ErrorAction SilentlyContinue).Count
+    Write-Host "Java files under src/: $javaCount" -ForegroundColor Green
+    Write-Host ''
+    Write-Host 'Dry run complete. Re-run without -DryRun to write files.' -ForegroundColor Yellow
+    return
+}
 
 Write-Step 'Copying project (original preserved)'
 $n = Copy-ProjectTree -Source $Source -Dest $OutputPath

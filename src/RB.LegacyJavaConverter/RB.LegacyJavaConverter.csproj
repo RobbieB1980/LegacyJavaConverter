@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>RB-Legacy-Java-Converter</AssemblyName>
+    <RootNamespace>RB.LegacyJavaConverter</RootNamespace>
+    <Product>RB Legacy Java Converter</Product>
+    <Company>RobbieB1980</Company>
+    <Version>1.0.0</Version>
+    <FileVersion>1.0.0</FileVersion>
+    <InformationalVersion>1.0.0</InformationalVersion>
+    <Description>Convert Forge 1.20.1 Java mod workspaces to NeoForge 26.2 scaffolds</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\..\Convert-Forge1201-ToNeoForge262.ps1" Link="tools\Convert-Forge1201-ToNeoForge262.ps1" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\README.md" Link="tools\README.md" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\docs\USAGE.md" Link="tools\docs\USAGE.md" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\LICENSE" Link="tools\LICENSE" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

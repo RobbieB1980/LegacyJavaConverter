@@ -1,24 +1,39 @@
-﻿# Legacy Java Converter
+# Legacy Java Converter
 
-**Experimental** PowerShell converter: **Minecraft Forge 1.20.1** workspaces → **NeoForge 26.2** (ModDevGradle) scaffolds.
+**Experimental** PowerShell + Windows GUI converter: **Minecraft Forge 1.20.1** workspaces → **NeoForge 26.2** (ModDevGradle) scaffolds.
 
-This is a first-pass automation tool. It is **not** a complete port. Large mods (for example Friend) still need manual follow-up after the scaffold, but the rewrite stack is proven enough to reach **green `compileJava` / `build`** on that project after additional API fixes.
+This is a first-pass automation tool. It is **not** a complete port. Large mods still need manual follow-up after the scaffold, but the rewrite stack was proven on a real project (**Friend**) through compile, world creation, and in-game entity spawn.
 
 Related product: [RB-Mcreator-Version-Updater](https://github.com/RobbieB1980/RB-Mcreator-Version-Updater) (26.1 → 26.2 NeoForge/MCreator updater).
 
-## Requirements
+## Downloads (Windows)
 
-- Windows + PowerShell 5.1+ (or PowerShell 7+)
-- Java **25** toolchain for NeoForge 26.2 builds
-- A Forge **1.20.1** source tree with `src/`
-- Internet access the first time Gradle resolves NeoForge / ModDevGradle
+After a release build (or from CI artifacts):
 
-## Quick start
+| Artifact | Description |
+|----------|-------------|
+| `RB-Legacy-Java-Converter-Setup.exe` | GUI installer (self-contained, embeds portable package) |
+| `RB-Legacy-Java-Converter-Portable.zip` | Portable folder — unzip and run `RB-Legacy-Java-Converter.exe` |
+
+Build locally:
 
 ```powershell
-git clone https://github.com/RobbieB1980/LegacyJavaConverter.git
-cd LegacyJavaConverter
+.\scripts\Build-Release.ps1
+```
 
+Outputs land in `dist\`.
+
+## GUI app
+
+1. Install via Setup.exe **or** extract the portable zip.
+2. Run **RB Legacy Java Converter**.
+3. Choose **Input** (Forge 1.20.1 project with `src/`) and empty **Output** folder.
+4. Optionally enable **Compile after convert** (needs JDK 25).
+5. Click **Convert**. Original project is never modified.
+
+## CLI (PowerShell)
+
+```powershell
 .\Convert-Forge1201-ToNeoForge262.ps1 `
   -Path "D:\mods\MyForgeMod-1.20.1" `
   -OutputPath "D:\mods\MyForgeMod-26.2" `
@@ -28,14 +43,11 @@ cd LegacyJavaConverter
 | Parameter | Description |
 |-----------|-------------|
 | `-Path` | Source Forge 1.20.1 project (required) |
-| `-OutputPath` | Empty output folder for the 26.2 copy (required) |
-| `-Compile` | Run `gradlew compileJava` after conversion (diagnostic) |
+| `-OutputPath` | Empty output folder (required) |
+| `-Compile` | Run `gradlew compileJava` after conversion |
+| `-DryRun` | Preview only — no files written |
 | `-NeoVersion` | Default `26.2.0.32-beta` |
 | `-GeckoLibVersion` | Default `5.5.3` |
-| `-SmartBrainLibVersion` | Default `2.0.0` |
-| `-LocalLibDir` | Optional folder with local dependency jars |
-
-The **original project is not modified** — conversion works on a copy.
 
 After conversion:
 
@@ -50,36 +62,29 @@ A `LEGACY_MIGRATION_REPORT.md` is written in the output folder.
 ## What is automated
 
 1. Full project copy (excludes `build/`, `.gradle/`, etc.)
-2. ModDevGradle **26.2** scaffold (`build.gradle`, `settings.gradle`, `gradle.properties`, `neoforge.mods.toml`)
+2. ModDevGradle **26.2** scaffold
 3. Dependency map (GeckoLib 5 / SmartBrainLib 2 for 26.2)
 4. Forge → NeoForge package renames
-5. Safer tick event rewrites (`ClientTickEvent.Post` / `ServerTickEvent.Post`)
-6. `ResourceLocation` → `Identifier`
-7. GeckoLib 4 → 5 package paths + `AnimationController` constructor shape
-8. **26.2 API pass** (NBT OrEmpty, `isSolidRender`, navigation `moveTo` vs entity `snapTo`, `EntitySpawnReason`, server access, `BreakBlockEvent`, permissions, ColorCollection blocks, weather/clock stubs, cross-dim teleport, Camera, ClipContext, …)
-9. Registry templates (`createEntities` / sound / items / blocks)
-10. `@Mod` constructor injection template
-11. `@Mod.EventBusSubscriber` → `LegacyEventBootstrap` + `addListener`
-12. Gradle wrapper bootstrap (from a local TOWW reference when available)
-13. Client item stubs when item models exist
+5. Tick event rewrites, `ResourceLocation` → `Identifier`
+6. GeckoLib 4 → 5 package paths + controller constructor shape
+7. **26.2 API pass** (NBT OrEmpty, navigation, spawn reason, permissions, ColorCollection blocks, weather/clock stubs, teleport signature, …)
+8. Registry templates + `@Mod.EventBusSubscriber` → bootstrap
+9. Gradle wrapper bootstrap when a local reference exists
 
 ## What you must still fix manually
 
-- Complex gameplay / AI / networking still on 1.20.1 APIs
-- Written books and dyed items (data components) if heavily used
-- Nested multi-line `teleportTo` expressions
-- GeckoLib render/model `GeoRenderState` signatures
-- Mixins, capabilities, datapack worldgen edge cases
-- Runtime testing (`runClient`, commands, dimensions)
+- Datapacks (biomes / dimension types often need 26.2 JSON shape)
+- GeckoLib assets under `assets/<mod>/geckolib/models|animations/` with bare resource IDs
+- Written books / dyed items (data components)
+- Mixins, networking, complex gameplay
+- Runtime testing (`runClient`)
 
-## Validation note (Friend)
+## Requirements
 
-The Friend mod (Forge 1.20.1 → NeoForge 26.2) was used as a large real-world driver:
-
-- Scaffold + multi-pass rewrites + manual/API follow-up → **`gradlew build` SUCCESS**
-- Artifact shape: `friend-*-mc26.2-neoforge.jar` with GeckoLib 26.2 as a runtime dependency
-
-Expect other mods to need different residual fixes; Friend was a stretch goal, not a guarantee for every codebase.
+- Windows 10/11 (GUI installer + app)
+- PowerShell 5.1+ (bundled with Windows)
+- Java **25** for compile/build of converted projects
+- Internet for first Gradle resolve of NeoForge
 
 ## License
 
