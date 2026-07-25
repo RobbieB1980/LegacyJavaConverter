@@ -56,12 +56,22 @@ if (Test-Path $toolsSrc) {
 else {
     New-Item -ItemType Directory -Path (Join-Path $PortableRoot 'tools') -Force | Out-Null
     Copy-Item (Join-Path $RepoRoot 'Convert-Forge1201-ToNeoForge262.ps1') (Join-Path $PortableRoot 'tools') -Force
+    Copy-Item (Join-Path $RepoRoot 'Convert-JarToProject.ps1') (Join-Path $PortableRoot 'tools') -Force
+    Copy-Item (Join-Path $RepoRoot 'Convert-OldJarToNeoForge262.ps1') (Join-Path $PortableRoot 'tools') -Force
     Copy-Item (Join-Path $RepoRoot 'README.md') (Join-Path $PortableRoot 'tools') -Force
     if (Test-Path (Join-Path $RepoRoot 'docs')) {
         Copy-Item (Join-Path $RepoRoot 'docs') (Join-Path $PortableRoot 'tools\docs') -Recurse -Force
     }
     if (Test-Path (Join-Path $RepoRoot 'LICENSE')) {
         Copy-Item (Join-Path $RepoRoot 'LICENSE') (Join-Path $PortableRoot 'tools') -Force
+    }
+}
+# Ensure jar scripts always present next to tools
+$toolsFinal = Join-Path $PortableRoot 'tools'
+foreach ($s in @('Convert-JarToProject.ps1','Convert-OldJarToNeoForge262.ps1','Convert-Forge1201-ToNeoForge262.ps1')) {
+    $src = Join-Path $RepoRoot $s
+    if ((Test-Path $src) -and -not (Test-Path (Join-Path $toolsFinal $s))) {
+        Copy-Item $src $toolsFinal -Force
     }
 }
 

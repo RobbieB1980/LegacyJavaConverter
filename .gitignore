@@ -12,6 +12,8 @@ Desktop.ini
 **/obj/
 dist/
 *.log
+lib/decompiler-cache/
+_smoke-decompile/
 
 # Local conversion outputs
 **/compile*.log

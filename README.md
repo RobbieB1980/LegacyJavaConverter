@@ -27,16 +27,40 @@ Outputs land in `dist\`.
 
 1. Install via Setup.exe **or** extract the portable zip.
 2. Run **RB Legacy Java Converter**.
-3. Choose **Input** (Forge 1.20.1 project with `src/`) and empty **Output** folder.
-4. Optionally enable **Compile after convert** (needs JDK 25).
-5. Click **Convert**. Original project is never modified.
+3. Choose a mode:
+   - **Mode A — Project folder:** Forge 1.20.1 (or decompiled) source with `src/`
+   - **Mode B — Finished `.jar`:** Vineflower decompile → optional NeoForge 26.2 scaffold
+4. Choose **Input** and empty **Output** folder.
+5. Optionally enable **Compile after convert** (needs JDK 25; jar mode also needs Java 17+ for Vineflower).
+6. Click **Convert** / **Jar → 26.2**. Original input is never modified.
+
+See [docs/JAR-PIPELINE.md](docs/JAR-PIPELINE.md) for the jar workflow.
 
 ## CLI (PowerShell)
+
+### Project → 26.2
 
 ```powershell
 .\Convert-Forge1201-ToNeoForge262.ps1 `
   -Path "D:\mods\MyForgeMod-1.20.1" `
   -OutputPath "D:\mods\MyForgeMod-26.2" `
+  -Compile
+```
+
+### Finished JAR → decompiled project
+
+```powershell
+.\Convert-JarToProject.ps1 `
+  -JarPath "D:\mods\oldmod.jar" `
+  -OutputPath "D:\mods\oldmod-decompiled"
+```
+
+### Finished JAR → NeoForge 26.2 (full pipeline)
+
+```powershell
+.\Convert-OldJarToNeoForge262.ps1 `
+  -JarPath "D:\mods\oldmod.jar" `
+  -OutputPath "D:\mods\oldmod-26.2" `
   -Compile
 ```
 
