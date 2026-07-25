@@ -759,6 +759,55 @@ function Invoke-NeoForge26ApiRewritePass {
     return $touched
 }
 
+function Invoke-ModConfigSpecOrderPass {
+    <#
+    .SYNOPSIS
+      Fix decompiled MCreator ModConfigSpec classes that call BUILDER.build() before .define().
+      That order throws "Cannot get config value before spec is built" on world join / player spawn
+      (proven disconnect on The Knocker).
+    #>
+    param([string]$Root)
+
+    $files = Get-ChildItem (Join-Path $Root 'src\main\java') -Recurse -Filter '*.java' -File -ErrorAction SilentlyContinue
+    $touched = 0
+    foreach ($f in $files) {
+        $t = [System.IO.File]::ReadAllText($f.FullName)
+        if ($t -notmatch 'ModConfigSpec' -or $t -notmatch 'BUILDER\.build\(\)' -or $t -notmatch '\.define\(') { continue }
+
+        $buildIdx = $t.IndexOf('BUILDER.build()')
+        $defineIdx = $t.IndexOf('.define(')
+        if ($buildIdx -lt 0 -or $defineIdx -lt 0 -or $defineIdx -le $buildIdx) { continue }
+
+        $o = $t
+        # Drop early SPEC = BUILDER.build() field assignment (common MCreator decompile order)
+        $t = [regex]::Replace($t,
+            '(?m)^\s*public\s+static\s+final\s+ModConfigSpec\s+SPEC\s*=\s*BUILDER\.build\(\)\s*;\s*\r?\n',
+            '')
+
+        # If SPEC field vanished entirely, redeclare at end before last class brace
+        if ($t -notmatch 'ModConfigSpec\s+SPEC\b') {
+            $t = [regex]::Replace($t, '(?s)(.*\r?\n)(\})\s*\z',
+                "`$1    public static final ModConfigSpec SPEC = BUILDER.build();`r`n`$2`r`n", 1)
+        }
+        elseif ($t -match 'public\s+static\s+final\s+ModConfigSpec\s+SPEC\s*;' -and $t -notmatch 'SPEC\s*=\s*BUILDER\.build\(\)') {
+            $t = [regex]::Replace($t, '(?s)(.*\r?\n)(\})\s*\z',
+                "`$1    static { SPEC = BUILDER.build(); }`r`n`$2`r`n", 1)
+        }
+        elseif ($t -notmatch 'SPEC\s*=\s*BUILDER\.build\(\)') {
+            # SPEC field still missing assignment after strip
+            $t = [regex]::Replace($t, '(?s)(.*\r?\n)(\})\s*\z',
+                "`$1    public static final ModConfigSpec SPEC = BUILDER.build();`r`n`$2`r`n", 1)
+        }
+
+        if ($t -ne $o) {
+            [System.IO.File]::WriteAllText($f.FullName, $t)
+            $touched++
+            Write-Info "ModConfigSpec order fixed: $($f.Name)"
+        }
+    }
+    return $touched
+}
+
 function Invoke-RegistryTemplatePass {
     <#
     .SYNOPSIS
@@ -1073,6 +1122,10 @@ Write-Step 'NeoForge/Minecraft 26.2 API pass (NBT, nav, teleport, weather, color
 $api = Invoke-NeoForge26ApiRewritePass -Root $OutputPath
 Write-Ok "API-touched $api Java file(s)"
 
+Write-Step 'ModConfigSpec order pass (define-before-build; prevents world-join disconnect)'
+$cfg = Invoke-ModConfigSpecOrderPass -Root $OutputPath
+Write-Ok "Config-order-touched $cfg file(s)"
+
 Write-Step 'Registry template pass (createEntities / Registries.SOUND_EVENT / items / blocks)'
 $r = Invoke-RegistryTemplatePass -Root $OutputPath
 Write-Ok "Registry-touched $r file(s)"
@@ -1117,12 +1170,13 @@ $report = @"
    weather/clock stubs, cross-dim teleport signature, Camera.position, ClipContext CollisionContext,
    displayClientMessage->sendSystemMessage, RespawnConfig.respawnData, getSpawnPos, CommandSourceStack PermissionSet,
    FMLEnvironment.getDist(), registerItem/SpawnEggItem, client RenderTypes/SubmitNodeCollector/ArmorModelSet
-9. Registry templates (createEntities / Registries.SOUND_EVENT / createItems / createBlocks)
-10. ``@Mod`` constructor injection template (IEventBus + ModContainer)
-11. ``@Mod.EventBusSubscriber`` -> ``LegacyEventBootstrap`` + ``addListener`` registrations
-12. Entity level accessors (safe ``this.level()`` only), getCenter, setMaxUpStep comment-out
-13. pack.mcmeta format 107 + **templates/** neoforge.mods.toml (removes leftover resources META-INF toml that pins old MC versions)
-14. Client item stubs where models/item existed
+9. **ModConfigSpec order pass** (define-before-build) — prevents world-join disconnect from decompiled MCreator configs
+10. Registry templates (createEntities / Registries.SOUND_EVENT / createItems / createBlocks)
+11. ``@Mod`` constructor injection template (IEventBus + ModContainer)
+12. ``@Mod.EventBusSubscriber`` -> ``LegacyEventBootstrap`` + ``addListener`` registrations
+13. Entity level accessors (safe ``this.level()`` only), getCenter, setMaxUpStep comment-out
+14. pack.mcmeta format 107 + **templates/** neoforge.mods.toml (removes leftover resources META-INF toml that pins old MC versions)
+15. Client item stubs where models/item existed
 
 ## Important
 

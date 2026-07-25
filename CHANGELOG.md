@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.2.1 — 2026-07-25
+
+### Critical fix (The Knocker world-join disconnect)
+- **ModConfigSpec define-before-build pass:** decompiled MCreator configs that call `BUILDER.build()` before `.define(...)` caused  
+  `Cannot get config value before spec is built` on player spawn → **Connection lost / Disconnected**.
+- Converter now reorders SPEC construction after config value definitions.
+
+### Packaging
+- GUI + Setup version **1.2.1**
+- Rebuild installer / portable package
+
 ## 1.2.0 — 2026-07-25
 
 Proven on **Friend** (runtime) and **The Knocker** (NeoForge 1.21.8 jar → 26.2 compile/build).
