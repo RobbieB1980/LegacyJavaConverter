@@ -95,5 +95,8 @@ Write-Host ''
 Write-Host "Pipeline complete." -ForegroundColor Green
 Write-Host "  Decompiled project : $DecompilePath"
 Write-Host "  NeoForge 26.2      : $OutputPath"
+Write-Host ''
+Write-Host 'Next: open the 26.2 project and run gradlew build. Install ONLY build/libs output.' -ForegroundColor Cyan
+Write-Host 'Do NOT rename/copy the original input jar into a 26.2 mods folder.' -ForegroundColor Yellow
 # Always succeed for GUI once decompile + scaffold exist
 exit 0

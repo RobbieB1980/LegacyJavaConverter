@@ -1,14 +1,19 @@
 # Legacy Java Converter
 
-**Experimental** PowerShell + Windows GUI converter: **Minecraft Forge 1.20.1** workspaces → **NeoForge 26.2** (ModDevGradle) scaffolds.
+**Current release: v1.2.0**
 
-This is a first-pass automation tool. It is **not** a complete port. Large mods still need manual follow-up after the scaffold, but the rewrite stack was proven on a real project (**Friend**) through compile, world creation, and in-game entity spawn.
+**Experimental** PowerShell + Windows GUI converter: **Minecraft Forge 1.20.1** (and decompiled NeoForge 1.21.x jars) → **NeoForge 26.2** (ModDevGradle) scaffolds.
+
+This is a first-pass automation tool. It is **not** a complete port. Large mods still need manual follow-up after the scaffold. The rewrite stack was proven on:
+
+- **Friend** — compile, world creation, in-game entity spawn
+- **The Knocker** — NeoForge 1.21.8 jar → 26.2 compile + loadable metadata (`[26.2]`)
 
 Related product: [RB-Mcreator-Version-Updater](https://github.com/RobbieB1980/RB-Mcreator-Version-Updater) (26.1 → 26.2 NeoForge/MCreator updater).
 
 ## Downloads (Windows)
 
-After a release build (or from CI artifacts):
+From [GitHub Releases](https://github.com/RobbieB1980/LegacyJavaConverter/releases):
 
 | Artifact | Description |
 |----------|-------------|
@@ -21,7 +26,7 @@ Build locally:
 .\scripts\Build-Release.ps1
 ```
 
-Outputs land in `dist\`.
+Outputs land in `dist\`. See [CHANGELOG.md](CHANGELOG.md) for version history.
 
 ## GUI app
 
@@ -91,17 +96,20 @@ A `LEGACY_MIGRATION_REPORT.md` is written in the output folder.
 4. Forge → NeoForge package renames
 5. Tick event rewrites, `ResourceLocation` → `Identifier`
 6. GeckoLib 4 → 5 package paths + controller constructor shape
-7. **26.2 API pass** (NBT OrEmpty, navigation, spawn reason, permissions, ColorCollection blocks, weather/clock stubs, teleport signature, …)
+7. **26.2 API pass** (Friend + Knocker): NBT OrEmpty, navigation, spawn reason, permissions, ColorCollection, weather/clock stubs, teleport signature, `sendSystemMessage`, respawn/`getSpawnPos`, `CommandSourceStack` PermissionSet, `FMLEnvironment.getDist()`, spawn eggs / `registerItem`, client `RenderTypes`/`ArmorModelSet`, …
 8. Registry templates + `@Mod.EventBusSubscriber` → bootstrap
-9. Gradle wrapper bootstrap when a local reference exists
+9. **Removes leftover `resources/META-INF/neoforge.mods.toml`** so templates pin Minecraft **`[26.2]`** (prevents “wrong MC version” load errors from 1.21.x jars)
+10. Gradle wrapper bootstrap when a local reference exists
 
 ## What you must still fix manually
 
+- Remaining compile errors after scaffold (especially complex client render / networking)
 - Datapacks (biomes / dimension types often need 26.2 JSON shape)
 - GeckoLib assets under `assets/<mod>/geckolib/models|animations/` with bare resource IDs
 - Written books / dyed items (data components)
-- Mixins, networking, complex gameplay
+- Mixins, transfer/capabilities API, complex gameplay
 - Runtime testing (`runClient`)
+- **Always `gradlew build` and install `build/libs` only** — never the original input jar
 
 ## Requirements
 

@@ -34,7 +34,7 @@ public sealed class SetupForm : Form
 
         var title = new Label
         {
-            Text = "RB Legacy Java Converter",
+            Text = "RB Legacy Java Converter v1.2.0",
             Font = new Font("Segoe UI Semibold", 14f),
             ForeColor = Color.White,
             Location = new Point(24, 18),

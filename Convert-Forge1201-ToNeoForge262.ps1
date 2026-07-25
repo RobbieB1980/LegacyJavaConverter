@@ -90,7 +90,27 @@ function Get-ModMetaFromSource {
         foreach ($line in Get-Content $gp) {
             if ($line -match '^\s*mod_version\s*=\s*(.+)$') { $meta.mod_version = $Matches[1].Trim() }
             if ($line -match '^\s*mod_id\s*=\s*(.+)$') { $meta.mod_id = $Matches[1].Trim() }
+            if ($line -match '^\s*mod_name\s*=\s*(.+)$') { $meta.mod_name = $Matches[1].Trim() }
+            if ($line -match '^\s*mod_authors\s*=\s*(.+)$') { $meta.mod_authors = $Matches[1].Trim() }
+            if ($line -match '^\s*mod_license\s*=\s*(.+)$') { $meta.mod_license = $Matches[1].Trim() }
         }
+    }
+    # Prefer display metadata from existing NeoForge/Forge toml (jar decompile / NeoForge 1.21.x)
+    foreach ($rel in @(
+            'src\main\resources\META-INF\neoforge.mods.toml',
+            'src\main\resources\META-INF\mods.toml',
+            'META-INF\neoforge.mods.toml'
+        )) {
+        $toml = Join-Path $Root $rel
+        if (-not (Test-Path -LiteralPath $toml)) { continue }
+        $tt = Get-Content -LiteralPath $toml -Raw -ErrorAction SilentlyContinue
+        if (-not $tt) { continue }
+        if ($tt -match '(?m)^\s*modId\s*=\s*"([^"]+)"') { $meta.mod_id = $Matches[1] }
+        if ($tt -match '(?m)^\s*version\s*=\s*"([^"]+)"') { $meta.mod_version = $Matches[1] }
+        if ($tt -match '(?m)^\s*displayName\s*=\s*"([^"]+)"') { $meta.mod_name = $Matches[1] }
+        if ($tt -match '(?m)^\s*authors\s*=\s*"([^"]+)"') { $meta.mod_authors = $Matches[1] }
+        if ($tt -match '(?m)^\s*license\s*=\s*"([^"]+)"') { $meta.mod_license = $Matches[1] }
+        break
     }
     $bg = Join-Path $Root 'build.gradle'
     if (Test-Path $bg) {
@@ -380,11 +400,19 @@ $sblTomlBlock
 "@
     [System.IO.File]::WriteAllText((Join-Path $Root 'src\main\resources\pack.mcmeta'), $pack.Trim() + "`r`n")
 
-    # Remove old Forge mods.toml if present (MDG uses templates)
-    $oldToml = Join-Path $Root 'src\main\resources\META-INF\mods.toml'
-    if (Test-Path $oldToml) {
-        Remove-Item $oldToml -Force
-        Write-Info 'Removed legacy META-INF/mods.toml (using templates/neoforge.mods.toml)'
+    # Remove legacy/source mod metadata from resources so generated templates win.
+    # Critical: NeoForge 1.21.x jars leave neoforge.mods.toml with old minecraft versionRange
+    # (e.g. [1.21.8]) which causes loader rejection even when the scaffold targets 26.2.
+    $metaInf = Join-Path $Root 'src\main\resources\META-INF'
+    foreach ($name in @('mods.toml', 'neoforge.mods.toml', 'mods.toml.template', 'MANIFEST.MF')) {
+        $p = Join-Path $metaInf $name
+        if (Test-Path -LiteralPath $p) {
+            Remove-Item -LiteralPath $p -Force
+            Write-Info "Removed resources/META-INF/$name (using templates/neoforge.mods.toml)"
+        }
+    }
+    if ((Test-Path -LiteralPath $metaInf) -and -not (Get-ChildItem -LiteralPath $metaInf -Force -ErrorAction SilentlyContinue | Select-Object -First 1)) {
+        Remove-Item -LiteralPath $metaInf -Force -ErrorAction SilentlyContinue
     }
 }
 
@@ -523,7 +551,7 @@ function Invoke-MechanicalJavaRewrites {
 function Invoke-NeoForge26ApiRewritePass {
     <#
     .SYNOPSIS
-      Second-pass Minecraft/NeoForge 26.2 API renames proven on Friend-26.2 (Forge 1.20.1 source).
+      Second-pass Minecraft/NeoForge 26.2 API renames proven on Friend-26.2 and The Knocker.
       Safe mechanical transforms only - does not invent gameplay logic.
     #>
     param([string]$Root)
@@ -557,16 +585,69 @@ function Invoke-NeoForge26ApiRewritePass {
         $t = $t -replace '\.create\((\s*(?:level|serverLevel|world)\s*)\)',
             '.create($1, net.minecraft.world.entity.EntitySpawnReason.MOB_SUMMONED)'
 
-        # --- Server access: player.server is private; use level().getServer() ---
+        # --- Server access: use level().getServer() (Entity.getServer is gone / private in places) ---
         # Do NOT touch net.minecraft.server.* imports/packages
-        $t = $t -replace '(?<![\w.])(player|serverPlayer|owner|self)\.server\.', '$1.level().getServer().'
-        $t = $t -replace '(?<![\w.])(player|serverPlayer|owner|self)\.getServer\(\)', '$1.level().getServer()'
+        $t = $t -replace '(?<![\w.])(player|serverPlayer|owner|self|_player|_ent|entity|_entity|living|sourceentity|immediatesourceentity)\.server\.', '$1.level().getServer().'
+        $t = $t -replace '(?<![\w.])(player|serverPlayer|owner|self|_player|_ent|entity|_entity|living|sourceentity|immediatesourceentity)\.getServer\(\)', '$1.level().getServer()'
 
-        # --- Spawn / respawn ---
+        # --- Spawn / respawn (LevelData + ServerPlayer.RespawnConfig shape in 26.2) ---
         $t = $t -replace '\.getSharedSpawnPos\(\)', '.getRespawnData().pos()'
+        $t = $t -replace '\.getLevelData\(\)\.getSpawnPos\(\)', '.getLevelData().getRespawnData().pos()'
+        $t = $t -replace '\.getRespawnConfig\(\)\.pos\(\)', '.getRespawnConfig().respawnData().pos()'
+        $t = $t -replace '\.getRespawnConfig\(\)\.dimension\(\)', '.getRespawnConfig().respawnData().dimension()'
         # Player respawn: prefer RespawnConfig when present (manual polish often still needed)
         $t = $t -replace '(\w+)\.getRespawnPosition\(\)',
             '($1.getRespawnConfig() != null ? $1.getRespawnConfig().respawnData().pos() : null)'
+
+        # --- Player chat / actionbar (displayClientMessage removed) ---
+        $t = $t -replace '\.displayClientMessage\(([^,]+)\s*,\s*(?:true|false)\s*\)', '.sendSystemMessage($1)'
+
+        # --- FML dist accessor ---
+        $t = $t -replace 'FMLEnvironment\.dist\b', 'FMLEnvironment.getDist()'
+
+        # --- DeferredRegister items: registerItem(name, fn, new Properties()) no longer matches ---
+        $t = $t -replace '\.registerItem\(([^,]+),\s*([^,]+),\s*new\s+(?:Item\.)?Properties\(\)\s*\)', '.registerItem($1, $2)'
+
+        # --- SpawnEggItem(EntityType, Properties) -> Properties + ENTITY_DATA component (26.x) ---
+        $t = [regex]::Replace($t,
+            'new\s+SpawnEggItem\(\s*(\([^)]*EntityType[^)]*\)[^,]+|\w+(?:\.\w+)*(?:\(\))?)\s*,\s*([A-Za-z_][\w]*)\s*\)',
+            'new SpawnEggItem($2.component(net.minecraft.core.component.DataComponents.ENTITY_DATA, net.minecraft.world.item.component.TypedEntityData.of($1, new net.minecraft.nbt.CompoundTag())))')
+
+        # --- CommandSourceStack permission int -> LevelBasedPermissionSet ---
+        # MCreator / common: CommandSourceStack(..., serverLevelOrNull, 4, name, ...)
+        $t = $t -replace '(_level|_serverLevel|serverLevel|level)\s*,\s*4\s*,',
+            '$1, net.minecraft.server.permissions.LevelBasedPermissionSet.OWNER,'
+        $t = $t -replace '(_level|_serverLevel|serverLevel|level)\s*,\s*2\s*,',
+            '$1, net.minecraft.server.permissions.LevelBasedPermissionSet.GAMEMASTER,'
+        $t = $t -replace '(_level|_serverLevel|serverLevel|level)\s*,\s*3\s*,',
+            '$1, net.minecraft.server.permissions.LevelBasedPermissionSet.ADMIN,'
+        $t = $t -replace '(\?\s*\(ServerLevel\)[^,]+?\s*:\s*null)\s*,\s*4\s*,',
+            '$1, net.minecraft.server.permissions.LevelBasedPermissionSet.OWNER,'
+        $t = $t -replace '(\?\s*\(ServerLevel\)[^,]+?\s*:\s*null)\s*,\s*2\s*,',
+            '$1, net.minecraft.server.permissions.LevelBasedPermissionSet.GAMEMASTER,'
+
+        # --- Client render package moves (common humanoid / glow layers) ---
+        $t = $t -replace 'import\s+net\.minecraft\.client\.renderer\.MultiBufferSource\s*;',
+            'import net.minecraft.client.renderer.SubmitNodeCollector;'
+        $t = $t -replace 'import\s+net\.minecraft\.client\.renderer\.RenderType\s*;',
+            'import net.minecraft.client.renderer.rendertype.RenderTypes;'
+        # Only rewrite classic RenderType static factories; leave other RenderType mentions.
+        $t = $t -replace '\bRenderType\.(eyes|entityCutout|entityCutoutNoCull|entityTranslucent|entityTranslucentEmissive)\b', 'RenderTypes.$1'
+        $t = $t -replace '\bMultiBufferSource\b', 'SubmitNodeCollector'
+        # Armor layer: old dual HumanoidModel inner/outer -> ArmorModelSet bake
+        $t = [regex]::Replace($t,
+            'new\s+HumanoidArmorLayer\(\s*this\s*,\s*new\s+HumanoidModel\([^;]*?ModelLayers\.PLAYER_INNER_ARMOR\)\s*,\s*new\s+HumanoidModel\([^;]*?ModelLayers\.PLAYER_OUTER_ARMOR\)\s*,\s*context\.getEquipmentRenderer\(\)\s*\)',
+            'new HumanoidArmorLayer(this, net.minecraft.client.renderer.entity.ArmorModelSet.bake(ModelLayers.PLAYER_ARMOR, context.getModelSet(), HumanoidModel::new), context.getEquipmentRenderer())',
+            [System.Text.RegularExpressions.RegexOptions]::Singleline)
+        $t = $t -replace 'ModelLayers\.PLAYER_INNER_ARMOR', 'ModelLayers.PLAYER_ARMOR /* was INNER; use ArmorModelSet */'
+        $t = $t -replace 'ModelLayers\.PLAYER_OUTER_ARMOR', 'ModelLayers.PLAYER_ARMOR /* was OUTER; use ArmorModelSet */'
+        # PlayerSkin.texture() -> body().texturePath()
+        $t = $t -replace '\.getSkin\(\)\.texture\(\)', '.getSkin().body().texturePath()'
+
+        # --- Legacy NeoForge item capability API (transfer rewrite is manual) ---
+        $t = $t -replace 'import\s+net\.neoforged\.neoforge\.capabilities\.Capabilities\.ItemHandler\s*;\s*', ''
+        $t = $t -replace '(?m)^(\s*)event\.registerBlockEntity\(\s*ItemHandler\.BLOCK\s*,.+$',
+            '$1// TODO 26.2: item handler capability moved to Capabilities.Item + transfer API (registerBlockEntity removed by converter)'
 
         # --- Effects / entity packages ---
         $t = $t -replace 'MobEffects\.MOVEMENT_SPEED', 'MobEffects.SPEED'
@@ -911,14 +992,20 @@ function Ensure-ClientItems {
 
 function Install-WrapperFromTowwOrMdk {
     param([string]$Root)
-    $ref = 'F:\Grok Build Apps\TheOneWhoWatches-26.2'
-    if ((Test-Path (Join-Path $ref 'gradlew.bat')) -and (Test-Path (Join-Path $ref 'gradle\wrapper'))) {
-        Copy-Item (Join-Path $ref 'gradlew.bat') $Root -Force
-        if (Test-Path (Join-Path $ref 'gradlew')) { Copy-Item (Join-Path $ref 'gradlew') $Root -Force }
-        New-Item -ItemType Directory -Path (Join-Path $Root 'gradle\wrapper') -Force | Out-Null
-        Copy-Item (Join-Path $ref 'gradle\wrapper\*') (Join-Path $Root 'gradle\wrapper') -Force
-        Write-Ok 'Gradle wrapper copied from TheOneWhoWatches-26.2'
-        return
+    $candidates = @(
+        'F:\Grok Build Apps\TheOneWhoWatches-26.2',
+        'H:\GrokBuild Master Folder\Completed Projects\Java\26.2\Friend-26.2',
+        'H:\GrokBuild Master Folder\Completed Projects\Java\26.2\The Knocker\the_knocker-1.5.2-neoforge-1.21.8-26.2'
+    )
+    foreach ($ref in $candidates) {
+        if ((Test-Path (Join-Path $ref 'gradlew.bat')) -and (Test-Path (Join-Path $ref 'gradle\wrapper'))) {
+            Copy-Item (Join-Path $ref 'gradlew.bat') $Root -Force
+            if (Test-Path (Join-Path $ref 'gradlew')) { Copy-Item (Join-Path $ref 'gradlew') $Root -Force }
+            New-Item -ItemType Directory -Path (Join-Path $Root 'gradle\wrapper') -Force | Out-Null
+            Copy-Item (Join-Path $ref 'gradle\wrapper\*') (Join-Path $Root 'gradle\wrapper') -Force
+            Write-Ok "Gradle wrapper copied from $ref"
+            return
+        }
     }
     Write-Warn2 'No wrapper reference found - run gradle wrapper manually'
 }
@@ -1025,25 +1112,35 @@ $report = @"
 5. Safer TickEvent rewrite (ClientTickEvent.Post / ServerTickEvent.Post)
 6. ``ResourceLocation`` -> ``Identifier`` (MC 26.x rename)
 7. GeckoLib 4 packages -> GeckoLib 5 (``com.geckolib`` + AnimationController ctor)
-8. **26.2 API pass** (proven on Friend): NBT OrEmpty, isSolidRender, PathNavigation.moveTo vs Entity.snapTo,
+8. **26.2 API pass** (Friend + The Knocker): NBT OrEmpty, isSolidRender, PathNavigation.moveTo vs Entity.snapTo,
    EntitySpawnReason create, server via level().getServer(), BreakBlockEvent, permissions, ColorCollection blocks,
-   weather/clock stubs, cross-dim teleport signature, Camera.position, ClipContext CollisionContext
+   weather/clock stubs, cross-dim teleport signature, Camera.position, ClipContext CollisionContext,
+   displayClientMessage->sendSystemMessage, RespawnConfig.respawnData, getSpawnPos, CommandSourceStack PermissionSet,
+   FMLEnvironment.getDist(), registerItem/SpawnEggItem, client RenderTypes/SubmitNodeCollector/ArmorModelSet
 9. Registry templates (createEntities / Registries.SOUND_EVENT / createItems / createBlocks)
 10. ``@Mod`` constructor injection template (IEventBus + ModContainer)
 11. ``@Mod.EventBusSubscriber`` -> ``LegacyEventBootstrap`` + ``addListener`` registrations
 12. Entity level accessors (safe ``this.level()`` only), getCenter, setMaxUpStep comment-out
-13. pack.mcmeta format 107 + neoforge.mods.toml template
+13. pack.mcmeta format 107 + **templates/** neoforge.mods.toml (removes leftover resources META-INF toml that pins old MC versions)
 14. Client item stubs where models/item existed
+
+## Important
+
+- Conversion success means a **scaffold** was written. It does **not** mean the mod is loadable yet.
+- Only install jars produced by ``gradlew build`` from this output (``build/libs/*.jar``).
+- Never rename the input 1.20.1 / 1.21.x jar and treat it as a 26.2 mod — NeoForge will reject old ``versionRange`` pins.
 
 ## What you must still fix manually
 
-- GeckoLib 5 render/model method signatures (GeoRenderState)
+- GeckoLib 5 render/model method signatures (GeoRenderState) and remaining client ``submit`` layer bodies
 - SmartBrainLib 1.x -> 2.x API if used
 - Written books / dyed items (DataComponents) if used heavily
 - Nested/multi-line teleportTo and complex expression rewrites
-- Networking, capabilities, worldgen datapacks
-- Mixins (if any)
+- Networking payload registrar typing, SavedDataType Identifier+Codec edge cases
+- Capabilities transfer API (old ItemHandler registration is commented out)
+- Mixins, worldgen datapacks
 - SynchedEntityData.define builder APIs, entity tags, remaining vanilla package moves
+- Full ``gradlew compileJava`` / ``build`` until clean
 
 ## Next commands
 
