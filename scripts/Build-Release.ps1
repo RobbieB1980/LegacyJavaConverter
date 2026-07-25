@@ -66,13 +66,20 @@ else {
         Copy-Item (Join-Path $RepoRoot 'LICENSE') (Join-Path $PortableRoot 'tools') -Force
     }
 }
-# Ensure jar scripts always present next to tools
+# Always overwrite tools scripts from repo root (publish output can ship stale copies)
 $toolsFinal = Join-Path $PortableRoot 'tools'
-foreach ($s in @('Convert-JarToProject.ps1','Convert-OldJarToNeoForge262.ps1','Convert-Forge1201-ToNeoForge262.ps1')) {
+if (-not (Test-Path $toolsFinal)) { New-Item -ItemType Directory -Path $toolsFinal -Force | Out-Null }
+foreach ($s in @('Convert-JarToProject.ps1','Convert-OldJarToNeoForge262.ps1','Convert-Forge1201-ToNeoForge262.ps1','README.md','LICENSE')) {
     $src = Join-Path $RepoRoot $s
-    if ((Test-Path $src) -and -not (Test-Path (Join-Path $toolsFinal $s))) {
+    if (Test-Path $src) {
         Copy-Item $src $toolsFinal -Force
+        Write-Host "    tools/$s (from repo)"
     }
+}
+if (Test-Path (Join-Path $RepoRoot 'docs')) {
+    $docsDest = Join-Path $toolsFinal 'docs'
+    if (Test-Path $docsDest) { Remove-Item $docsDest -Recurse -Force }
+    Copy-Item (Join-Path $RepoRoot 'docs') $docsDest -Recurse -Force
 }
 
 @'

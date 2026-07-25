@@ -67,11 +67,23 @@ $cargs = @{
     NeoVersion       = $NeoVersion
     GeckoLibVersion  = $GeckoLibVersion
 }
-if ($Compile) {
-    & $convScript @cargs -Compile
+# Invoke converter in a child process so its "exit 0" / compile noise cannot
+# surface as a NativeCommandError under $ErrorActionPreference = 'Stop'.
+# Quote paths: Start-Process ArgumentList array splits on spaces otherwise.
+$convArgLine = "-NoProfile -ExecutionPolicy Bypass -File `"$convScript`" -Path `"$DecompilePath`" -OutputPath `"$OutputPath`" -MinecraftVersion `"$MinecraftVersion`" -NeoVersion `"$NeoVersion`" -GeckoLibVersion `"$GeckoLibVersion`""
+if ($Compile) { $convArgLine += ' -Compile' }
+
+$convProc = Start-Process -FilePath 'powershell.exe' -ArgumentList $convArgLine -WorkingDirectory $ToolRoot -Wait -PassThru -NoNewWindow
+$convCode = $convProc.ExitCode
+if ($null -eq $convCode) { $convCode = 0 }
+
+$scaffoldOk = (Test-Path (Join-Path $OutputPath 'LEGACY_MIGRATION_REPORT.md')) -or
+              (Test-Path (Join-Path $OutputPath 'build.gradle'))
+if (-not $scaffoldOk -and $convCode -ne 0) {
+    throw "NeoForge 26.2 convert failed (exit $convCode) and no scaffold was written under $OutputPath"
 }
-else {
-    & $convScript @cargs
+if ($convCode -ne 0 -and $scaffoldOk) {
+    Write-Host "Converter process exit $convCode but scaffold is present - treating as success." -ForegroundColor Yellow
 }
 
 if (-not $KeepDecompile) {
@@ -83,3 +95,5 @@ Write-Host ''
 Write-Host "Pipeline complete." -ForegroundColor Green
 Write-Host "  Decompiled project : $DecompilePath"
 Write-Host "  NeoForge 26.2      : $OutputPath"
+# Always succeed for GUI once decompile + scaffold exist
+exit 0

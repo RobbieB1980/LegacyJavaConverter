@@ -5,15 +5,15 @@ namespace RB.LegacyJavaConverter;
 
 public sealed class MainForm : Form
 {
-    private readonly RadioButton _radProject = new() { Text = "Mode A: Forge/NeoForge project folder", AutoSize = true, Checked = true };
-    private readonly RadioButton _radJar = new() { Text = "Mode B: Finished .jar (decompile → optional 26.2 convert)", AutoSize = true };
+    private readonly RadioButton _radProject = new() { Text = "Mode A: Project folder (Forge source with src/)", AutoSize = true, Checked = true };
+    private readonly RadioButton _radJar = new() { Text = "Mode B: Finished .jar file (decompile, not decrypt)", AutoSize = true };
     private readonly Label _lblInput = new() { Text = "Input project", AutoSize = true, ForeColor = Color.Gainsboro, Anchor = AnchorStyles.Left, Margin = new Padding(0, 10, 8, 4) };
     private readonly TextBox _txtInput = NewTextBox();
     private readonly TextBox _txtOutput = NewTextBox();
     private readonly TextBox _txtMc = NewTextBox();
     private readonly TextBox _txtNeo = NewTextBox();
     private readonly TextBox _txtGecko = NewTextBox();
-    private readonly CheckBox _chkCompile = NewCheck("Compile after convert (diagnostic)", false);
+    private readonly CheckBox _chkCompile = NewCheck("Compile after convert (optional diagnostic; failures OK)", false);
     private readonly CheckBox _chkDry = NewCheck("Dry run (preview only — no files written)", false);
     private readonly CheckBox _chkContinueNeo = NewCheck("After decompile, also scaffold NeoForge 26.2", true);
     private readonly Label _lblOptionsHint = new()
@@ -93,6 +93,13 @@ public sealed class MainForm : Form
         _radJar.ForeColor = Color.Gainsboro;
         _radProject.Margin = new Padding(0, 2, 0, 2);
         _radJar.Margin = new Padding(0, 2, 0, 2);
+        modePanel.Controls.Add(new Label
+        {
+            Text = "Choose input type first — Mode B switches Browse to a .jar file picker.",
+            AutoSize = true,
+            ForeColor = Color.Khaki,
+            Margin = new Padding(0, 0, 0, 6)
+        });
         modePanel.Controls.Add(_radProject);
         modePanel.Controls.Add(_radJar);
 
@@ -738,6 +745,10 @@ public sealed class MainForm : Form
         AppendLog($"Input : {inFull}", Color.LightSkyBlue);
         AppendLog($"Output: {outFull}", Color.LightGreen);
         AppendLog($"Minecraft {mc} / NeoForge {neo} / GeckoLib {gecko}", Color.Khaki);
+        AppendLog($"Tools : {toolsRoot}", Color.DimGray);
+        AppendLog($"Script: {Path.GetFileName(script)}", Color.DimGray);
+        if (_chkCompile.Checked)
+            AppendLog("Note  : Compile is diagnostic only. Scaffold success does not require a green build.", Color.Khaki);
         if (_chkDry.Checked)
             AppendLog("Dry run: preview only", Color.Khaki);
         AppendLog("----------------------------------------", Color.Gray);
@@ -808,9 +819,26 @@ public sealed class MainForm : Form
             var code = _running.ExitCode;
             SetBusy(false);
             AppendLog("----------------------------------------", Color.Gray);
-            if (code == 0)
+
+            // Scaffold may succeed even if a diagnostic compile left a non-zero code
+            // (older tool scripts, or Gradle writing to stderr under PowerShell).
+            var scaffoldOk = !_chkDry.Checked
+                && !string.IsNullOrWhiteSpace(_lastOutput)
+                && (File.Exists(Path.Combine(_lastOutput, "LEGACY_MIGRATION_REPORT.md"))
+                    || File.Exists(Path.Combine(_lastOutput, "DECOMPILE_REPORT.md"))
+                    || File.Exists(Path.Combine(_lastOutput, "build.gradle")));
+
+            if (code == 0 || scaffoldOk)
             {
-                AppendLog("Finished successfully (exit 0).", Color.LightGreen);
+                if (code == 0)
+                    AppendLog("Finished successfully (exit 0).", Color.LightGreen);
+                else
+                {
+                    AppendLog($"Process exit code {code}, but output scaffold looks complete.", Color.Gold);
+                    AppendLog("Treat this as SUCCESS for Mode B (decompile/scaffold). Compile is optional.", Color.Gold);
+                    if (File.Exists(Path.Combine(_lastOutput, "compile-errors.log")))
+                        AppendLog("See compile-errors.log in the output folder for Java/API issues.", Color.Khaki);
+                }
                 if (!_chkDry.Checked)
                 {
                     AppendLog("Output: " + _lastOutput, Color.LightGreen);
