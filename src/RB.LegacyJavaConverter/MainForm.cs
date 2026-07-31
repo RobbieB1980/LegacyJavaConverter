@@ -47,6 +47,7 @@ public sealed class MainForm : Form
         ClientSize = new Size(980, 760);
         MinimumSize = new Size(840, 640);
         StartPosition = FormStartPosition.CenterScreen;
+        try { Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { /* optional */ }
         BackColor = Color.FromArgb(32, 34, 40);
         ForeColor = Color.Gainsboro;
         Font = new Font("Segoe UI", 9.5f);

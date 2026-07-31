@@ -92,6 +92,11 @@ Copy-Item (Join-Path $RepoRoot 'README.md') (Join-Path $PortableRoot 'README.md'
 if (Test-Path (Join-Path $RepoRoot 'LICENSE')) {
     Copy-Item (Join-Path $RepoRoot 'LICENSE') (Join-Path $PortableRoot 'LICENSE.txt') -Force
 }
+$ico = Join-Path $RepoRoot 'assets\app.ico'
+if (Test-Path $ico) {
+    Copy-Item $ico (Join-Path $PortableRoot 'app.ico') -Force
+    Write-Host "    app.ico (from assets)"
+}
 
 Write-Host "==> Creating portable ZIP" -ForegroundColor Cyan
 $portableZip = Join-Path $Dist 'RB-Legacy-Java-Converter-Portable.zip'

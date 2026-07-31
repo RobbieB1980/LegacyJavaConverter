@@ -8,6 +8,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>RB-Legacy-Java-Converter-Setup</AssemblyName>
     <RootNamespace>RB.LegacyJavaConverter.Setup</RootNamespace>
+    <ApplicationIcon>..\..\assets\app.ico</ApplicationIcon>
     <Product>RB Legacy Java Converter Setup</Product>
     <Company>RobbieB1980</Company>
     <Version>1.2.2</Version>
