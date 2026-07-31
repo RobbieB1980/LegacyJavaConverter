@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.2.2 — 2026-08-01
+
+### 26.2 API rewrite expansions (BuildPaste / decompile lessons)
+- `EntityType.VANILLA_FIELD` → `EntityTypes.VANILLA_FIELD` (+ import)
+- Full **ColorCollection** grid for `Items`/`Blocks` (`WHITE_WOOL` → `WOOL.white()`, glazed terracotta, beds, carpets, …)
+- `getMainCamera()` → `mainCamera()`
+- `Minecraft.getInstance().renderBuffers()` → `gameRenderer.renderBuffers()`
+- Note: `MultiBufferSource` / `.bufferSource()` world drawing still needs manual `SubmitCustomGeometryEvent` + `submitShapeOutline` (naive renames are not enough)
+
+### Packaging
+- Bump GUI / portable package when releasing **1.2.2**
+
 ## 1.2.1 — 2026-07-25
 
 ### Critical fix (The Knocker world-join disconnect)

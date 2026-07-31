@@ -96,7 +96,7 @@ A `LEGACY_MIGRATION_REPORT.md` is written in the output folder.
 4. Forge → NeoForge package renames
 5. Tick event rewrites, `ResourceLocation` → `Identifier`
 6. GeckoLib 4 → 5 package paths + controller constructor shape
-7. **26.2 API pass** (Friend + Knocker): NBT OrEmpty, navigation, spawn reason, permissions, ColorCollection, weather/clock stubs, teleport signature, `sendSystemMessage`, respawn/`getSpawnPos`, `CommandSourceStack` PermissionSet, `FMLEnvironment.getDist()`, spawn eggs / `registerItem`, client `RenderTypes`/`ArmorModelSet`, …
+7. **26.2 API pass** (Friend + Knocker + BuildPaste lessons): NBT OrEmpty, navigation, spawn reason, permissions, full ColorCollection grid (`Items`/`Blocks`), `EntityTypes` registry fields, weather/clock stubs, teleport signature, `sendSystemMessage`, respawn/`getSpawnPos`, `CommandSourceStack` PermissionSet, `FMLEnvironment.getDist()`, spawn eggs / `registerItem`, client `RenderTypes`/`ArmorModelSet`, `mainCamera` / `gameRenderer.renderBuffers()`, …
 8. Registry templates + `@Mod.EventBusSubscriber` → bootstrap
 9. **Removes leftover `resources/META-INF/neoforge.mods.toml`** so templates pin Minecraft **`[26.2]`** (prevents “wrong MC version” load errors from 1.21.x jars)
 10. Gradle wrapper bootstrap when a local reference exists
@@ -104,6 +104,7 @@ A `LEGACY_MIGRATION_REPORT.md` is written in the output folder.
 ## What you must still fix manually
 
 - Remaining compile errors after scaffold (especially complex client render / networking)
+- World-space custom geometry still on `MultiBufferSource` / `.bufferSource()` — port to `SubmitCustomGeometryEvent` + `submitShapeOutline`
 - Datapacks (biomes / dimension types often need 26.2 JSON shape)
 - GeckoLib assets under `assets/<mod>/geckolib/models|animations/` with bare resource IDs
 - Written books / dyed items (data components)

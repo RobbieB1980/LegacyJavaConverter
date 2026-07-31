@@ -696,29 +696,64 @@ function Invoke-NeoForge26ApiRewritePass {
         $t = $t -replace 'ClipContext\.Fluid\.NONE\s*,\s*null\)',
             'ClipContext.Fluid.NONE, net.minecraft.world.phys.shapes.CollisionContext.empty())'
 
-        # --- Colored blocks (ColorCollection) common literals ---
-        $colorBlocks = [ordered]@{
-            'Blocks.BLACK_CONCRETE'           = 'Blocks.CONCRETE.black()'
-            'Blocks.WHITE_CONCRETE'           = 'Blocks.CONCRETE.white()'
-            'Blocks.RED_CONCRETE'             = 'Blocks.CONCRETE.red()'
-            'Blocks.LIGHT_BLUE_CONCRETE'      = 'Blocks.CONCRETE.lightBlue()'
-            'Blocks.GRAY_CONCRETE'            = 'Blocks.CONCRETE.gray()'
-            'Blocks.BLACK_STAINED_GLASS'      = 'Blocks.STAINED_GLASS.black()'
-            'Blocks.WHITE_STAINED_GLASS'      = 'Blocks.STAINED_GLASS.white()'
-            'Blocks.GRAY_STAINED_GLASS'       = 'Blocks.STAINED_GLASS.gray()'
-            'Blocks.LIGHT_BLUE_STAINED_GLASS' = 'Blocks.STAINED_GLASS.lightBlue()'
-            'Blocks.RED_STAINED_GLASS'        = 'Blocks.STAINED_GLASS.red()'
-            'Blocks.WHITE_CARPET'             = 'Blocks.CARPET.white()'
-            'Blocks.BLUE_CARPET'              = 'Blocks.CARPET.blue()'
-            'Blocks.RED_CARPET'               = 'Blocks.CARPET.red()'
-            'Blocks.BLACK_CARPET'             = 'Blocks.CARPET.black()'
-            'Blocks.RED_BED'                  = 'Blocks.BED.red()'
-            'Blocks.WHITE_BED'                = 'Blocks.BED.white()'
-            'Blocks.CHAIN'                    = 'Blocks.IRON_CHAIN'
+        # --- EntityType.VANILLA_FIELD => EntityTypes (registry objects moved in 26.2) ---
+        $tEntity = [regex]::Replace($t, '\bEntityType\.([A-Z][A-Z0-9_]*)\b', 'EntityTypes.$1')
+        if ($tEntity -ne $t) {
+            $t = $tEntity
+            if ($t -notmatch 'import\s+net\.minecraft\.world\.entity\.EntityTypes;') {
+                if ($t -match 'import\s+net\.minecraft\.world\.entity\.EntityType;') {
+                    $t = $t -replace 'import\s+net\.minecraft\.world\.entity\.EntityType;',
+                        "import net.minecraft.world.entity.EntityType;`r`nimport net.minecraft.world.entity.EntityTypes;"
+                }
+                elseif ($t -match '(?m)^package\s+[^;]+;') {
+                    $t = [regex]::Replace($t, '(?m)^(package\s+[^;]+;\s*)',
+                        "`$1`r`nimport net.minecraft.world.entity.EntityTypes;`r`n", 1)
+                }
+            }
         }
-        foreach ($k in $colorBlocks.Keys) {
-            $t = $t.Replace($k, $colorBlocks[$k])
+
+        # --- Camera / buffers accessors ---
+        $t = $t -replace '\.getMainCamera\(\)', '.mainCamera()'
+        $t = [regex]::Replace(
+            $t,
+            'Minecraft\.getInstance\(\)\.renderBuffers\(\)',
+            'Minecraft.getInstance().gameRenderer.renderBuffers()'
+        )
+        $t = $t -replace 'Minecraft\.getInstance\(\)\.gameRenderer\.gameRenderer\.renderBuffers\(\)',
+            'Minecraft.getInstance().gameRenderer.renderBuffers()'
+
+        # --- Colored Items/Blocks (ColorCollection) — full dye grid ---
+        $dyeAccessors = [ordered]@{
+            'WHITE'='white'; 'ORANGE'='orange'; 'MAGENTA'='magenta'; 'LIGHT_BLUE'='lightBlue'
+            'YELLOW'='yellow'; 'LIME'='lime'; 'PINK'='pink'; 'GRAY'='gray'
+            'LIGHT_GRAY'='lightGray'; 'CYAN'='cyan'; 'PURPLE'='purple'; 'BLUE'='blue'
+            'BROWN'='brown'; 'GREEN'='green'; 'RED'='red'; 'BLACK'='black'
         }
+        $itemColorGroups = @(
+            @{ Suffix='WOOL'; Collection='WOOL' },
+            @{ Suffix='CARPET'; Collection='CARPET' },
+            @{ Suffix='BED'; Collection='BED' },
+            @{ Suffix='CONCRETE'; Collection='CONCRETE' },
+            @{ Suffix='CONCRETE_POWDER'; Collection='CONCRETE_POWDER' },
+            @{ Suffix='STAINED_GLASS'; Collection='STAINED_GLASS' },
+            @{ Suffix='STAINED_GLASS_PANE'; Collection='STAINED_GLASS_PANE' },
+            @{ Suffix='TERRACOTTA'; Collection='DYED_TERRACOTTA' },
+            @{ Suffix='GLAZED_TERRACOTTA'; Collection='GLAZED_TERRACOTTA' },
+            @{ Suffix='SHULKER_BOX'; Collection='DYED_SHULKER_BOX' },
+            @{ Suffix='CANDLE'; Collection='DYED_CANDLE' },
+            @{ Suffix='BANNER'; Collection='BANNER' },
+            @{ Suffix='DYE'; Collection='DYE' },
+            @{ Suffix='HARNESS'; Collection='HARNESS' },
+            @{ Suffix='BUNDLE'; Collection='DYED_BUNDLE' }
+        )
+        foreach ($g in $itemColorGroups) {
+            foreach ($c in $dyeAccessors.Keys) {
+                $t = $t.Replace("Items.${c}_$($g.Suffix)", "Items.$($g.Collection).$($dyeAccessors[$c])()")
+                $t = $t.Replace("Blocks.${c}_$($g.Suffix)", "Blocks.$($g.Collection).$($dyeAccessors[$c])()")
+            }
+        }
+        $t = $t.Replace('Blocks.CHAIN', 'Blocks.IRON_CHAIN')
+        $t = $t.Replace('Items.CHAIN', 'Items.IRON_CHAIN')
 
         # --- Weather / day-time (best-effort; many dims fix time in data) ---
         $t = $t -replace '(\w+)\.setWeatherParameters\(\s*([^,]+)\s*,\s*([^,]+)\s*,\s*false\s*,\s*false\s*\)',
