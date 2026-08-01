@@ -3,13 +3,13 @@
   Create/update a GitHub Release and upload portable + setup artifacts from dist/.
 
 .EXAMPLE
-  .\scripts\Publish-GitHubRelease.ps1 -Tag v1.2.4
+  .\scripts\Publish-GitHubRelease.ps1 -Tag v1.2.5
 #>
 [CmdletBinding()]
 param(
-    [string]$Tag = 'v1.2.4',
+    [string]$Tag = 'v1.2.5',
     [string]$Repo = 'RobbieB1980/LegacyJavaConverter',
-    [string]$Name = 'RB Legacy Java Converter 1.2.4'
+    [string]$Name = 'RB Legacy Java Converter 1.2.5'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -68,17 +68,17 @@ Experimental converter: **Forge 1.20.1** / decompiled **NeoForge 1.21.x (MCreato
 | ``RB-Legacy-Java-Converter-Setup.exe`` | Windows installer (self-contained; embeds portable toolset) |
 | ``RB-Legacy-Java-Converter-Portable.zip`` | No install - extract and run ``Start-Converter.bat`` or the EXE |
 
-### What's new in 1.2.4
+### What's new in 1.2.5
 
-- **Hotfix (ELECTRONICS):** safer ``playBidirectional`` rewrite — no more mangled ``handler(, …)`` compile errors
-- **Hotfix:** safer ``registerItem`` / ``BlockItem`` rewrite — no more ``() -> prop`` inside ``BlockItem``
-- Includes all **1.2.3** MCreator 1.21.x → 26.2 work (BATH proven load; ELECTRONICS proven build)
+- **Hotfix (GARDEN):** rewrite ``MESSAGES.forEach → playBidirectional`` to typed ``registerOne`` helper (fixes CAP# / type-inference compile failure)
+- Menu payload registration guidance: ``RegisterPayloadHandlersEvent`` + 4-arg handlers
+- Includes **1.2.4** ELECTRONICS rewrite safety and **1.2.3** MCreator 1.21.x pass
 
-### From 1.2.3
+### Proven mods (1.21.8 → 26.2)
 
-- MCreator / NeoForge 1.21.x rewrite pass (fluid overlay, noCollision, GUI extract API, isClientSide, Tuple, capabilities)
-- 4-arg ``playBidirectional`` so clientbound payloads get client handlers
-- MOAdecor BATH: compile + build + client load on NeoForge 26.2.0.32-beta
+- MOAdecor BATH — build + client load
+- MOAdecor ELECTRONICS — build
+- MOAdecor GARDEN — build
 
 ### Requirements
 

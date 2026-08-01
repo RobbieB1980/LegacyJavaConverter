@@ -976,6 +976,44 @@ public boolean keyPressed(KeyEvent event) {
         # Also repair already-corrupted form from older converter builds:
         $t = $t -replace '\.playBidirectional\(\s*(\w+)\s*,\s*(\w+)\.reader\(\)\s*,\s*(\w+)\.handler\(\s*,\s*\3\.handler\(\)\s*,\s*\3\.handler\(\)\s*\)\s*\)', '.playBidirectional($1, $2.reader(), $3.handler(), $3.handler())'
 
+        # MCreator main-mod class: forEach wildcards cannot call playBidirectional (type inference fails).
+        # Rewrite to a typed loop + registerOne helper when the broken lambda form is present.
+        if ($t -match 'MESSAGES\.forEach\s*\(\s*\(\s*id\s*,\s*networkMessage\s*\)\s*->\s*registrar\.playBidirectional') {
+            $t = [regex]::Replace($t,
+                '(?ms)private\s+void\s+registerNetworking\s*\(\s*RegisterPayloadHandlersEvent\s+event\s*\)\s*\{\s*PayloadRegistrar\s+registrar\s*=\s*event\.registrar\s*\(\s*"[^"]+"\s*\)\s*;\s*MESSAGES\.forEach\s*\(\s*\(\s*id\s*,\s*networkMessage\s*\)\s*->\s*registrar\.playBidirectional\s*\([^;]+;\)\s*;\s*networkingRegistered\s*=\s*true\s*;\s*\}',
+                {
+                    param($m)
+                    $full = $m.Value
+                    if ($full -notmatch 'event\.registrar\s*\(\s*"([^"]+)"\s*\)') { return $full }
+                    $modId = $Matches[1]
+                    $classMatch = [regex]::Match($t, 'public\s+class\s+(\w+)')
+                    $className = if ($classMatch.Success) { $classMatch.Groups[1].Value } else { 'ModMain' }
+@"
+private void registerNetworking(RegisterPayloadHandlersEvent event) {
+      PayloadRegistrar registrar = event.registrar("$modId");
+      for (var entry : MESSAGES.entrySet()) {
+         registerOne(registrar, entry.getKey(), entry.getValue());
+      }
+      networkingRegistered = true;
+   }
+
+   `@SuppressWarnings("unchecked")
+   private static <T extends CustomPacketPayload> void registerOne(
+      PayloadRegistrar registrar, Type<?> id, $className.NetworkMessage<?> message
+   ) {
+      IPayloadHandler<T> handler = (IPayloadHandler<T>)message.handler();
+      registrar.playBidirectional(
+         (Type<T>)id,
+         (StreamCodec<? super RegistryFriendlyByteBuf, T>)message.reader(),
+         handler,
+         handler
+      );
+   }
+"@
+                })
+            # Prefer direct MenuStateUpdateMessage registration when that class exists in project (added in project fix pass)
+        }
+
         if ($t -ne $o) {
             [System.IO.File]::WriteAllText($f.FullName, $t)
             $touched++

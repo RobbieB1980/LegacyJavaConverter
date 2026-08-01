@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.2.5 — 2026-08-01
+
+### Networking forEach type-inference fix (MOAdecor GARDEN)
+- **Fix:** MCreator main class pattern  
+  `MESSAGES.forEach((id, msg) -> registrar.playBidirectional(...))`  
+  fails to compile under Java generics wildcards  
+  (`no suitable method found for playBidirectional` / CAP# constraints).
+- Converter rewrites that form to a typed `registerOne` helper loop.
+- Prefer registering `MenuStateUpdateMessage` on `RegisterPayloadHandlersEvent`  
+  with 4-arg handlers (not `FMLCommonSetupEvent`).
+
+Proven: **MOAdecor GARDEN 1.21.8.A** → `gradlew build`.
+
+### Packaging
+- GUI / Setup / portable package **1.2.5**
+
 ## 1.2.4 — 2026-08-01
 
 ### Converter rewrite safety (MOAdecor ELECTRONICS)
