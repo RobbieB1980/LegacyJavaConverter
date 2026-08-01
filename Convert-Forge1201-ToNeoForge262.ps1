@@ -794,6 +794,199 @@ function Invoke-NeoForge26ApiRewritePass {
     return $touched
 }
 
+function Invoke-Mcreator1218ToNeoForge262Pass {
+    <#
+    .SYNOPSIS
+      MCreator / NeoForge 1.21.x jar decompile lessons (MOAdecor BATH etc.) for Minecraft 26.2.
+      Bulk-safe transforms: fluid overlay stubs, noCollision, client GUI extract API, isClientSide(),
+      removed Tuple, and broken ItemHandler capability lookups.
+    #>
+    param([string]$Root)
+
+    $files = Get-ChildItem (Join-Path $Root 'src\main\java') -Recurse -Filter '*.java' -File -ErrorAction SilentlyContinue
+    $touched = 0
+    foreach ($f in $files) {
+        $t = [System.IO.File]::ReadAllText($f.FullName)
+        $o = $t
+
+        # --- BlockBehaviour spelling (1.21.x British / old mapping) ---
+        $t = $t -replace '\.noCollission\(\)', '.noCollision()'
+
+        # --- Forge fluid overlay on Block (method no longer on Block in 26.2) ---
+        # Drop entire method body; decorative MCreator blocks always returned true.
+        $t = [regex]::Replace($t,
+            '(?ms)^\s*(?:@Override\s*)?public\s+boolean\s+shouldDisplayFluidOverlay\s*\([^)]*\)\s*\{(?:[^{}]|\{[^{}]*\})*\}\s*',
+            '')
+        $t = $t -replace 'import\s+net\.minecraft\.world\.level\.BlockAndTintGetter\s*;\s*\r?\n', ''
+        # Client-only type lives under renderer.block in 26.2 (if any remaining refs)
+        $t = $t -replace 'net\.minecraft\.world\.level\.BlockAndTintGetter',
+            'net.minecraft.client.renderer.block.BlockAndTintGetter'
+
+        # --- Level.isClientSide field is private; always call method ---
+        $t = [regex]::Replace($t, '\.isClientSide\b(?!\s*\()', '.isClientSide()')
+
+        # --- GuiGraphics -> GuiGraphicsExtractor (26.x extract pipeline) ---
+        $t = [regex]::Replace($t, '\bGuiGraphics\b(?!Extractor)', 'GuiGraphicsExtractor')
+        $t = $t -replace 'import\s+net\.minecraft\.client\.gui\.GuiGraphicsExtractor\s*;',
+            'import net.minecraft.client.gui.GuiGraphicsExtractor;'
+        $t = $t -replace 'import\s+net\.minecraft\.client\.gui\.GuiGraphics\s*;',
+            'import net.minecraft.client.gui.GuiGraphicsExtractor;'
+
+        # Common Screen method renames used by MCreator container screens
+        $t = $t -replace '\bprotected\s+void\s+renderBg\s*\(', 'public void extractBackground('
+        $t = $t -replace '\bpublic\s+void\s+renderBg\s*\(', 'public void extractBackground('
+        $t = $t -replace '\.renderTooltip\s*\(', '.extractTooltip('
+        $t = $t -replace '\bprotected\s+void\s+renderLabels\s*\(', 'protected void extractLabels('
+        $t = $t -replace '\bpublic\s+void\s+renderLabels\s*\(', 'public void extractLabels('
+        # render(...) that was the old Screen render hook often becomes extractRenderState
+        $t = [regex]::Replace($t,
+            '(?m)^(\s*)public\s+void\s+render\s*\(\s*GuiGraphicsExtractor\s+',
+            '$1public void extractRenderState(GuiGraphicsExtractor ')
+
+        # imageWidth/imageHeight are final — pass size into super(...)
+        # Immediate form: super(...); this.imageWidth = W; this.imageHeight = H;
+        $t = [regex]::Replace($t,
+            'super\(([^;]+?)\);\s*this\.imageWidth\s*=\s*(\d+)\s*;\s*this\.imageHeight\s*=\s*(\d+)\s*;',
+            'super($1, $2, $3);')
+        # MCreator form: super(...); field assigns...; this.imageWidth = W; this.imageHeight = H;
+        $t = [regex]::Replace($t,
+            'super\((\s*\w+\s*,\s*\w+\s*,\s*\w+\s*)\);((?:\s*this\.\w+\s*=\s*[^;]+;){0,8})\s*this\.imageWidth\s*=\s*(\d+)\s*;\s*this\.imageHeight\s*=\s*(\d+)\s*;',
+            'super($1, $3, $4);$2')
+
+        # Drop trivial extractRenderState that only calls super + extractTooltip (base already does this)
+        $t = [regex]::Replace($t,
+            '(?ms)^\s*(?:@Override\s*)?public\s+void\s+extractRenderState\s*\(\s*GuiGraphicsExtractor\s+\w+\s*,\s*int\s+\w+\s*,\s*int\s+\w+\s*,\s*float\s+\w+\s*\)\s*\{\s*super\.(?:extractRenderState|render)\([^;]+;\s*this\.extractTooltip\([^;]+;\s*\}\s*',
+            '')
+
+        # Fix extractBackground arg order if still (graphics, float, int, int) from old renderBg
+        $t = [regex]::Replace($t,
+            '(public|protected)\s+void\s+extractBackground\s*\(\s*GuiGraphicsExtractor\s+(\w+)\s*,\s*float\s+(\w+)\s*,\s*int\s+(\w+)\s*,\s*int\s+(\w+)\s*\)',
+            '$1 void extractBackground(GuiGraphicsExtractor $2, int $4, int $5, float $3)')
+
+        # keyPressed(int,int,int) -> KeyEvent (ESC close handled by Screen; keep override when custom)
+        if ($t -match 'boolean\s+keyPressed\s*\(\s*int\s+\w+\s*,\s*int\s+\w+\s*,\s*int\s+\w+\s*\)') {
+            if ($t -notmatch 'import\s+net\.minecraft\.client\.input\.KeyEvent\s*;') {
+                if ($t -match '(?m)^package\s+[^;]+;') {
+                    $t = [regex]::Replace($t, '(?m)^(package\s+[^;]+;\s*)',
+                        "`$1`r`nimport net.minecraft.client.input.KeyEvent;`r`n", 1)
+                }
+            }
+            # Simple ESC close pattern from MCreator
+            $t = [regex]::Replace($t,
+                '(?ms)public\s+boolean\s+keyPressed\s*\(\s*int\s+(\w+)\s*,\s*int\s+\w+\s*,\s*int\s+\w+\s*\)\s*\{\s*if\s*\(\s*\1\s*==\s*256\s*\)\s*\{\s*this\.minecraft\.player\.closeContainer\(\)\s*;\s*return\s+true\s*;\s*\}\s*else\s*\{\s*return\s+super\.keyPressed\s*\(\s*\1\s*,\s*\w+\s*,\s*\w+\s*\)\s*;\s*\}\s*\}',
+                @'
+public boolean keyPressed(KeyEvent event) {
+      if (event.key() == 256) {
+         this.minecraft.player.closeContainer();
+         return true;
+      } else {
+         return super.keyPressed(event);
+      }
+   }
+'@)
+            # Any remaining 3-arg keyPressed calls to super
+            $t = [regex]::Replace($t,
+                'super\.keyPressed\s*\(\s*(\w+)\s*,\s*\w+\s*,\s*\w+\s*\)',
+                'super.keyPressed(event)')
+            $t = [regex]::Replace($t,
+                'public\s+boolean\s+keyPressed\s*\(\s*int\s+\w+\s*,\s*int\s+\w+\s*,\s*int\s+\w+\s*\)',
+                'public boolean keyPressed(KeyEvent event)')
+        }
+
+        # --- net.minecraft.util.Tuple removed: MCreator delayed work queue ---
+        if ($t -match 'net\.minecraft\.util\.Tuple' -or $t -match '\bTuple\s*<\s*Runnable') {
+            $t = $t -replace 'import\s+net\.minecraft\.util\.Tuple\s*;\s*\r?\n', ''
+            $t = $t -replace 'Collection<\s*Tuple<\s*Runnable\s*,\s*Integer\s*>\s*>', 'Collection<Object[]>'
+            $t = $t -replace 'List<\s*Tuple<\s*Runnable\s*,\s*Integer\s*>\s*>', 'List<Object[]>'
+            $t = $t -replace 'new\s+Tuple\s*(?:<\s*Runnable\s*,\s*Integer\s*>)?\s*\(\s*([^,]+)\s*,\s*([^)]+)\)', 'new Object[] { $1, $2 }'
+            $t = $t -replace '\(Tuple<\s*Runnable\s*,\s*Integer\s*>\)\s*', ''
+            # work.setB((Integer)work.getB() - 1)
+            $t = [regex]::Replace($t,
+                '(\w+)\.setB\(\s*\(Integer\)\1\.getB\(\)\s*-\s*1\s*\)',
+                '$1[1] = (Integer)$1[1] - 1')
+            $t = [regex]::Replace($t, '\(Integer\)(\w+)\.getB\(\)', '(Integer)$1[1]')
+            $t = [regex]::Replace($t, '\(\(Runnable\)(\w+)\.getA\(\)\)', '((Runnable)$1[0])')
+            $t = [regex]::Replace($t, '(\w+)\.getA\(\)', '$1[0]')
+            $t = [regex]::Replace($t, '(\w+)\.getB\(\)', '$1[1]')
+        }
+
+        # --- ItemHandler.ITEM / .ENTITY capability symbols (1.21 MCreator menus) ---
+        # Capabilities.Item now uses ResourceHandler + ItemAccess; skip transfer binding and keep ItemStackHandler.
+        if ($t -match 'ItemHandler\.(ITEM|ENTITY|BLOCK)\b') {
+            # Item stack capability bind block
+            $nl = [Environment]::NewLine
+            $t = [regex]::Replace($t,
+                '(?ms)IItemHandler\s+cap\s*=\s*\(IItemHandler\)\s*itemstack\.getCapability\s*\(\s*ItemHandler\.ITEM\s*\)\s*;\s*if\s*\(\s*cap\s*!=\s*null\s*\)\s*\{\s*this\.internal\s*=\s*cap\s*;\s*this\.bound\s*=\s*true\s*;\s*\}',
+                ("// 26.2: Capabilities.Item.ITEM needs ItemAccess/transfer API - keep ItemStackHandler" + $nl + "            this.bound = true;"))
+            # Entity capability bind block
+            $t = [regex]::Replace($t,
+                '(?ms)IItemHandler\s+cap\s*=\s*\(IItemHandler\)\s*this\.boundEntity\.getCapability\s*\(\s*ItemHandler\.ENTITY\s*\)\s*;\s*if\s*\(\s*cap\s*!=\s*null\s*\)\s*\{\s*this\.internal\s*=\s*cap\s*;\s*this\.bound\s*=\s*true\s*;\s*\}',
+                ("// 26.2: Capabilities.Item.ENTITY transfer rewrite skipped - keep ItemStackHandler" + $nl + "               this.bound = true;"))
+            # Leftover bare references
+            $t = $t -replace 'ItemHandler\.ITEM', '/* ItemHandler.ITEM removed */ null'
+            $t = $t -replace 'ItemHandler\.ENTITY', '/* ItemHandler.ENTITY removed */ null'
+            $t = $t -replace 'ItemHandler\.BLOCK', '/* ItemHandler.BLOCK removed */ null'
+        }
+
+        # --- Clean unused FluidState import only when file no longer references FluidState ---
+        if ($t -notmatch '\bFluidState\b' -and $t -match 'import\s+net\.minecraft\.world\.level\.material\.FluidState\s*;') {
+            $t = $t -replace 'import\s+net\.minecraft\.world\.level\.material\.FluidState\s*;\s*\r?\n', ''
+        }
+
+        # --- Minecraft.screen field moved to gui.screen() in 26.2 ---
+        $t = $t -replace 'Minecraft\.getInstance\(\)\.screen\b', 'Minecraft.getInstance().gui.screen()'
+        $t = $t -replace '(?<![\w.])minecraft\.screen\b', 'minecraft.gui.screen()'
+
+        # --- DeferredRegister.Items.registerItem(..., Properties) needs Supplier/UnaryOperator ---
+        $t = [regex]::Replace($t,
+            '\.registerItem\(([^,]+),\s*([^,]+),\s*(new\s+(?:Item\.)?Properties\([^)]*\)|\w+)\s*\)',
+            {
+                param($m)
+                $a1 = $m.Groups[1].Value
+                $a2 = $m.Groups[2].Value
+                $a3 = $m.Groups[3].Value.Trim()
+                if ($a3 -match '^(?:\(\)\s*->|Supplier|UnaryOperator)') { return $m.Value }
+                if ($a3 -match '^new\s+') { return ".registerItem($a1, $a2, () -> $a3)" }
+                # variable Properties (e.g. properties) -> supplier
+                if ($a3 -match '^[A-Za-z_][\w]*$') { return ".registerItem($a1, $a2, () -> $a3)" }
+                return $m.Value
+            })
+
+        # --- Payload registrar: StreamCodec<? extends FriendlyByteBuf -> ? super RegistryFriendlyByteBuf ---
+        $t = $t -replace 'StreamCodec<\s*\?\s*extends\s+FriendlyByteBuf\s*,', 'StreamCodec<? super RegistryFriendlyByteBuf,'
+        if ($t -match 'RegistryFriendlyByteBuf' -and $t -notmatch 'import\s+net\.minecraft\.network\.RegistryFriendlyByteBuf\s*;') {
+            if ($t -match 'import\s+net\.minecraft\.network\.FriendlyByteBuf\s*;') {
+                $t = $t -replace 'import\s+net\.minecraft\.network\.FriendlyByteBuf\s*;',
+                    "import net.minecraft.network.FriendlyByteBuf;`r`nimport net.minecraft.network.RegistryFriendlyByteBuf;"
+            }
+            elseif ($t -match '(?m)^package\s+[^;]+;') {
+                $t = [regex]::Replace($t, '(?m)^(package\s+[^;]+;\s*)',
+                    "`$1`r`nimport net.minecraft.network.RegistryFriendlyByteBuf;`r`n", 1)
+            }
+        }
+        # NeoForge 26.2: 3-arg playBidirectional leaves client handler null and crashes:
+        # "Some clientbound payloads are missing client-side handlers"
+        # Prefer explicit 4-arg form with the same handler on both sides when only one handler is supplied.
+        $t = [regex]::Replace($t,
+            '\.playBidirectional\(([^,]+),\s*([^,]+),\s*([^,\)]+)\s*\)',
+            {
+                param($m)
+                $a1 = $m.Groups[1].Value.Trim()
+                $a2 = $m.Groups[2].Value.Trim()
+                $a3 = $m.Groups[3].Value.Trim()
+                # already 4-arg if last arg contains comma handled by different match; skip null client
+                if ($a3 -match ',\s*') { return $m.Value }
+                ".playBidirectional($a1, $a2, $a3, $a3)"
+            })
+
+        if ($t -ne $o) {
+            [System.IO.File]::WriteAllText($f.FullName, $t)
+            $touched++
+        }
+    }
+    return $touched
+}
+
 function Invoke-ModConfigSpecOrderPass {
     <#
     .SYNOPSIS
@@ -1157,6 +1350,10 @@ Write-Step 'NeoForge/Minecraft 26.2 API pass (NBT, nav, teleport, weather, color
 $api = Invoke-NeoForge26ApiRewritePass -Root $OutputPath
 Write-Ok "API-touched $api Java file(s)"
 
+Write-Step 'MCreator / NeoForge 1.21.x -> 26.2 pass (blocks GUI menus fluid overlay)'
+$m121 = Invoke-Mcreator1218ToNeoForge262Pass -Root $OutputPath
+Write-Ok "1.21.x-touched $m121 Java file(s)"
+
 Write-Step 'ModConfigSpec order pass (define-before-build; prevents world-join disconnect)'
 $cfg = Invoke-ModConfigSpecOrderPass -Root $OutputPath
 Write-Ok "Config-order-touched $cfg file(s)"
@@ -1205,13 +1402,17 @@ $report = @"
    weather/clock stubs, cross-dim teleport signature, Camera.position, ClipContext CollisionContext,
    displayClientMessage->sendSystemMessage, RespawnConfig.respawnData, getSpawnPos, CommandSourceStack PermissionSet,
    FMLEnvironment.getDist(), registerItem/SpawnEggItem, client RenderTypes/SubmitNodeCollector/ArmorModelSet
-9. **ModConfigSpec order pass** (define-before-build) — prevents world-join disconnect from decompiled MCreator configs
-10. Registry templates (createEntities / Registries.SOUND_EVENT / createItems / createBlocks)
-11. ``@Mod`` constructor injection template (IEventBus + ModContainer)
-12. ``@Mod.EventBusSubscriber`` -> ``LegacyEventBootstrap`` + ``addListener`` registrations
-13. Entity level accessors (safe ``this.level()`` only), getCenter, setMaxUpStep comment-out
-14. pack.mcmeta format 107 + **templates/** neoforge.mods.toml (removes leftover resources META-INF toml that pins old MC versions)
-15. Client item stubs where models/item existed
+9. **MCreator / NeoForge 1.21.x pass** (MOAdecor BATH): drop ``shouldDisplayFluidOverlay`` / ``BlockAndTintGetter``,
+   ``noCollission``->``noCollision``, ``GuiGraphics``->``GuiGraphicsExtractor``, container ``renderBg``->``extractBackground``,
+   final ``imageWidth``/``imageHeight`` via ``super(..., w, h)``, ``keyPressed(KeyEvent)``, ``isClientSide()``,
+   remove ``Tuple`` work-queue, stub broken ``ItemHandler.ITEM/ENTITY`` capability binds
+10. **ModConfigSpec order pass** (define-before-build) — prevents world-join disconnect from decompiled MCreator configs
+11. Registry templates (createEntities / Registries.SOUND_EVENT / createItems / createBlocks)
+12. ``@Mod`` constructor injection template (IEventBus + ModContainer)
+13. ``@Mod.EventBusSubscriber`` -> ``LegacyEventBootstrap`` + ``addListener`` registrations
+14. Entity level accessors (safe ``this.level()`` only), getCenter, setMaxUpStep comment-out
+15. pack.mcmeta format 107 + **templates/** neoforge.mods.toml (removes leftover resources META-INF toml that pins old MC versions)
+16. Client item stubs where models/item existed
 
 ## Important
 

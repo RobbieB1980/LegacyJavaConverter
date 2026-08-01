@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.2.3 — 2026-08-01
+
+### MCreator / NeoForge 1.21.x → 26.2 pass (MOAdecor BATH)
+New rewrite pass for decompiled **1.21.8 NeoForge / MCreator** jars (in addition to Forge 1.20.1). Not a separate converter product — same Legacy pipeline + extra pass:
+- Remove `shouldDisplayFluidOverlay` + old `BlockAndTintGetter` import (method gone from Block)
+- `.noCollission()` → `.noCollision()`
+- `GuiGraphics` → `GuiGraphicsExtractor`; `renderBg` → `extractBackground`; tooltip/label extract renames
+- Final `imageWidth`/`imageHeight` → `super(menu, inv, title, w, h)` (including delayed field assigns)
+- `keyPressed(int,int,int)` → `keyPressed(KeyEvent)` (ESC close pattern)
+- `.isClientSide` field → `.isClientSide()`
+- `net.minecraft.util.Tuple` delayed work queue → `Object[]` holders
+- Stub MCreator `ItemHandler.ITEM` / `ItemHandler.ENTITY` capability binds (transfer API is manual)
+- `Minecraft.getInstance().screen` → `gui.screen()`
+- `registerItem(name, fn, Properties)` → supplier form `() -> properties`
+- Payload `StreamCodec<? extends FriendlyByteBuf` → `? super RegistryFriendlyByteBuf`
+- **Critical networking:** use 4-arg `playBidirectional(type, codec, handler, handler)` — 3-arg leaves client handler null and crashes with `missing client-side handlers`
+
+Proven: **MOAdecor BATH 1.21.8.A** → compile, `gradlew build`, and **client load on NeoForge 26.2.0.32-beta**.
+
+### Packaging
+- GUI / Setup / portable package **1.2.3**
+
 ## 1.2.2 — 2026-08-01
 
 ### 26.2 API rewrite expansions (BuildPaste / decompile lessons)
@@ -38,25 +60,6 @@ Proven on **Friend** (runtime) and **The Knocker** (NeoForge 1.21.8 jar → 26.2
 - `getRespawnConfig().pos()/dimension()` → `respawnData()...`
 - Broader `entity.getServer()` → `level().getServer()` receivers
 - `CommandSourceStack` permission int → `LevelBasedPermissionSet`
-- `FMLEnvironment.dist` → `FMLEnvironment.getDist()`
-- `registerItem(name, fn, new Properties())` → two-arg form
-- `SpawnEggItem(EntityType, Properties)` → entity data component form
-- Client: `MultiBufferSource`/`RenderType` → `SubmitNodeCollector`/`RenderTypes`
-- Humanoid armor: `PLAYER_INNER/OUTER_ARMOR` → `ArmorModelSet` + `PLAYER_ARMOR`
-- `PlayerSkin.texture()` → `body().texturePath()`
-- Comment out obsolete `Capabilities.ItemHandler` block-entity registration
 
-### Metadata
-- Prefer `modId` / display name / authors from existing NeoForge/Forge toml when present
-
-### Packaging
-- GUI + Setup version **1.2.0**
-
-## 1.1.1
-- Fix Mode B hard-fail on diagnostic compile
-
-## 1.1.0
-- Finished-JAR decompile pipeline and dual-mode GUI
-
-## 1.0.0
-- Initial Windows GUI app, installer, and Forge 1.20.1 → NeoForge 26.2 scaffold
+## 1.1.x and earlier
+See git history for initial GUI, jar pipeline, and Forge 1.20.1 scaffold support.

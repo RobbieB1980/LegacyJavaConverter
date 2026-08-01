@@ -1,13 +1,14 @@
 # Legacy Java Converter
 
-**Current release: v1.2.1**
+**Current release: v1.2.3**
 
-**Experimental** PowerShell + Windows GUI converter: **Minecraft Forge 1.20.1** (and decompiled NeoForge 1.21.x jars) → **NeoForge 26.2** (ModDevGradle) scaffolds.
+**Experimental** PowerShell + Windows GUI converter: **Minecraft Forge 1.20.1** and **decompiled NeoForge 1.21.x / MCreator jars** → **NeoForge 26.2** (ModDevGradle) scaffolds.
 
 This is a first-pass automation tool. It is **not** a complete port. Large mods still need manual follow-up after the scaffold. The rewrite stack was proven on:
 
 - **Friend** — compile, world creation, in-game entity spawn
 - **The Knocker** — NeoForge 1.21.8 jar → 26.2 compile + loadable metadata (`[26.2]`)
+- **MOAdecor BATH 1.21.8.A** — MCreator NeoForge 1.21.8 jar → 26.2 **compile + `gradlew build`** (decorative blocks + menu GUI)
 
 Related product: [RB-Mcreator-Version-Updater](https://github.com/RobbieB1980/RB-Mcreator-Version-Updater) (26.1 → 26.2 NeoForge/MCreator updater).
 

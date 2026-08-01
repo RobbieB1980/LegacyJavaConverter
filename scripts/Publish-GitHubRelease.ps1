@@ -3,13 +3,13 @@
   Create/update a GitHub Release and upload portable + setup artifacts from dist/.
 
 .EXAMPLE
-  .\scripts\Publish-GitHubRelease.ps1 -Tag v1.2.2
+  .\scripts\Publish-GitHubRelease.ps1 -Tag v1.2.3
 #>
 [CmdletBinding()]
 param(
-    [string]$Tag = 'v1.2.2',
+    [string]$Tag = 'v1.2.3',
     [string]$Repo = 'RobbieB1980/LegacyJavaConverter',
-    [string]$Name = 'RB Legacy Java Converter 1.2.2'
+    [string]$Name = 'RB Legacy Java Converter 1.2.3'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -59,7 +59,7 @@ function Invoke-GitHubJson([string]$Method, [string]$Uri, [hashtable]$BodyObj = 
 $notes = @"
 ## RB Legacy Java Converter $Tag
 
-Experimental converter: **Forge 1.20.1** / decompiled jars to **NeoForge 26.2**.
+Experimental converter: **Forge 1.20.1** / decompiled **NeoForge 1.21.x (MCreator)** jars → **NeoForge 26.2**.
 
 ### Downloads
 
@@ -68,11 +68,16 @@ Experimental converter: **Forge 1.20.1** / decompiled jars to **NeoForge 26.2**.
 | ``RB-Legacy-Java-Converter-Setup.exe`` | Windows installer (self-contained; embeds portable toolset) |
 | ``RB-Legacy-Java-Converter-Portable.zip`` | No install - extract and run ``Start-Converter.bat`` or the EXE |
 
-### What's new in 1.2.2
+### What's new in 1.2.3
 
-- 26.2 API expansions: EntityTypes, full ColorCollection grid, mainCamera / gameRenderer.renderBuffers
-- App icon on Setup + main EXE
-- Uninstall: Setup button, Start Menu entry, Uninstall.cmd, and Windows Apps and features (HKCU)
+- **MCreator / NeoForge 1.21.x rewrite pass** (proven on MOAdecor BATH 1.21.8.A):
+  - ``shouldDisplayFluidOverlay`` / ``BlockAndTintGetter`` removed
+  - ``noCollission`` → ``noCollision``
+  - GUI: ``GuiGraphics`` → ``GuiGraphicsExtractor``, ``extractBackground``, final image size via ``super(..., w, h)``
+  - ``isClientSide()``, ``gui.screen()``, Tuple work-queue, ItemHandler capability stubs
+  - ``registerItem`` supplier form; RegistryFriendlyByteBuf payload codecs
+- **Critical networking fix:** 4-arg ``playBidirectional(handler, handler)`` so clientbound payloads have client handlers (fixes crash: *missing client-side handlers: [mod:menustate_update]*)
+- MOAdecor BATH: compile + build + **client load** on NeoForge 26.2.0.32-beta
 
 ### Requirements
 
@@ -84,6 +89,7 @@ Experimental converter: **Forge 1.20.1** / decompiled jars to **NeoForge 26.2**.
 
 - Original input is never modified (always writes to output folder).
 - Setup installs under ``%LOCALAPPDATA%\RB-Legacy-Java-Converter`` by default (no admin required).
+- Conversion scaffold success ≠ always loadable; still run ``gradlew build`` and test in-game.
 "@
 
 Write-Host "==> Checking for existing release $Tag" -ForegroundColor Cyan
