@@ -3,13 +3,13 @@
   Create/update a GitHub Release and upload portable + setup artifacts from dist/.
 
 .EXAMPLE
-  .\scripts\Publish-GitHubRelease.ps1 -Tag v1.2.5
+  .\scripts\Publish-GitHubRelease.ps1 -Tag v1.2.6
 #>
 [CmdletBinding()]
 param(
-    [string]$Tag = 'v1.2.5',
+    [string]$Tag = 'v1.2.6',
     [string]$Repo = 'RobbieB1980/LegacyJavaConverter',
-    [string]$Name = 'RB Legacy Java Converter 1.2.5'
+    [string]$Name = 'RB Legacy Java Converter 1.2.6'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -68,17 +68,16 @@ Experimental converter: **Forge 1.20.1** / decompiled **NeoForge 1.21.x (MCreato
 | ``RB-Legacy-Java-Converter-Setup.exe`` | Windows installer (self-contained; embeds portable toolset) |
 | ``RB-Legacy-Java-Converter-Portable.zip`` | No install - extract and run ``Start-Converter.bat`` or the EXE |
 
-### What's new in 1.2.5
+### What's new in 1.2.6
 
-- **Hotfix (GARDEN):** rewrite ``MESSAGES.forEach → playBidirectional`` to typed ``registerOne`` helper (fixes CAP# / type-inference compile failure)
-- Menu payload registration guidance: ``RegisterPayloadHandlersEvent`` + 4-arg handlers
-- Includes **1.2.4** ELECTRONICS rewrite safety and **1.2.3** MCreator 1.21.x pass
+- **Critical:** networking rewrite that was supposed to land in 1.2.5 **now actually matches** MCreator ``MESSAGES.forEach`` lines
+- Injects typed ``registerOne`` + direct ``MenuStateUpdateMessage`` 4-arg registration
+- Strips late ``FMLCommonSetupEvent`` payload registration from menu messages
+- Retest: **MOAdecor BATH** reconverts and builds clean (jar produced; report = deprecation warnings only)
 
-### Proven mods (1.21.8 → 26.2)
+### Includes earlier 1.21.x → 26.2 work
 
-- MOAdecor BATH — build + client load
-- MOAdecor ELECTRONICS — build
-- MOAdecor GARDEN — build
+- 1.2.3–1.2.5: block/GUI rewrites, safer ``registerItem``, payload codec fixes, ELECTRONICS/GARDEN lessons
 
 ### Requirements
 

@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.2.6 — 2026-08-01
+
+### Networking rewrite actually applies (MOAdecor BATH retest)
+- **Critical fix:** v1.2.5 `MESSAGES.forEach → playBidirectional` rewrite regex never matched
+  real MCreator output (`playBidirectional(...));` vs broken `...;);` pattern).
+- Now matches the single-line forEach lambda, injects typed `registerOne`, and when
+  `network/MenuStateUpdateMessage.java` exists:
+  - registers `MenuStateUpdateMessage` directly on `RegisterPayloadHandlersEvent` (4-arg)
+  - strips late `@EventBusSubscriber` / `FMLCommonSetupEvent` registration
+- Proven: reconverted **MOAdecor BATH** builds a loadable jar; problems report is deprecation
+  warnings only (0 ERROR).
+
+### Packaging
+- GUI / Setup / portable package **1.2.6**
+
 ## 1.2.5 — 2026-08-01
 
 ### Networking forEach type-inference fix (MOAdecor GARDEN)

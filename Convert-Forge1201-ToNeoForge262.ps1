@@ -977,25 +977,19 @@ public boolean keyPressed(KeyEvent event) {
         $t = $t -replace '\.playBidirectional\(\s*(\w+)\s*,\s*(\w+)\.reader\(\)\s*,\s*(\w+)\.handler\(\s*,\s*\3\.handler\(\)\s*,\s*\3\.handler\(\)\s*\)\s*\)', '.playBidirectional($1, $2.reader(), $3.handler(), $3.handler())'
 
         # MCreator main-mod class: forEach wildcards cannot call playBidirectional (type inference fails).
-        # Rewrite to a typed loop + registerOne helper when the broken lambda form is present.
-        if ($t -match 'MESSAGES\.forEach\s*\(\s*\(\s*id\s*,\s*networkMessage\s*\)\s*->\s*registrar\.playBidirectional') {
+        # Match the single-line forEach lambda (3-arg or 4-arg) and replace with typed registerOne loop.
+        if ($t -match 'MESSAGES\.forEach\s*\(\s*\(\s*id\s*,\s*networkMessage\s*\)\s*->') {
+            $classMatch = [regex]::Match($t, 'public\s+class\s+(\w+)')
+            $className = if ($classMatch.Success) { $classMatch.Groups[1].Value } else { 'ModMain' }
+
+            # Replace forEach line(s) — tolerate 3 or 4 playBidirectional args and line breaks
             $t = [regex]::Replace($t,
-                '(?ms)private\s+void\s+registerNetworking\s*\(\s*RegisterPayloadHandlersEvent\s+event\s*\)\s*\{\s*PayloadRegistrar\s+registrar\s*=\s*event\.registrar\s*\(\s*"[^"]+"\s*\)\s*;\s*MESSAGES\.forEach\s*\(\s*\(\s*id\s*,\s*networkMessage\s*\)\s*->\s*registrar\.playBidirectional\s*\([^;]+;\)\s*;\s*networkingRegistered\s*=\s*true\s*;\s*\}',
-                {
-                    param($m)
-                    $full = $m.Value
-                    if ($full -notmatch 'event\.registrar\s*\(\s*"([^"]+)"\s*\)') { return $full }
-                    $modId = $Matches[1]
-                    $classMatch = [regex]::Match($t, 'public\s+class\s+(\w+)')
-                    $className = if ($classMatch.Success) { $classMatch.Groups[1].Value } else { 'ModMain' }
-@"
-private void registerNetworking(RegisterPayloadHandlersEvent event) {
-      PayloadRegistrar registrar = event.registrar("$modId");
-      for (var entry : MESSAGES.entrySet()) {
-         registerOne(registrar, entry.getKey(), entry.getValue());
-      }
-      networkingRegistered = true;
-   }
+                '(?ms)^\s*MESSAGES\.forEach\s*\(\s*\(\s*id\s*,\s*networkMessage\s*\)\s*->\s*registrar\.playBidirectional\s*\([^;]+?\)\s*\)\s*;\s*',
+                "      for (var entry : MESSAGES.entrySet()) {`r`n         registerOne(registrar, entry.getKey(), entry.getValue());`r`n      }`r`n")
+
+            # Inject registerOne helper once if missing
+            if ($t -notmatch 'private\s+static\s+<.*>\s+void\s+registerOne\s*\(') {
+                $helper = @"
 
    `@SuppressWarnings("unchecked")
    private static <T extends CustomPacketPayload> void registerOne(
@@ -1010,8 +1004,57 @@ private void registerNetworking(RegisterPayloadHandlersEvent event) {
       );
    }
 "@
-                })
-            # Prefer direct MenuStateUpdateMessage registration when that class exists in project (added in project fix pass)
+                # Insert before queueServerWork or before next private/public method after registerNetworking
+                if ($t -match '(?m)^(\s*public static void queueServerWork)') {
+                    $t = $t -replace '(?m)^(\s*public static void queueServerWork)', ($helper + "`r`n`$1")
+                }
+                elseif ($t -match '(?ms)(networkingRegistered\s*=\s*true\s*;\s*\})') {
+                    $t = [regex]::Replace($t, '(?ms)(networkingRegistered\s*=\s*true\s*;\s*\})', ('$1' + $helper), 1)
+                }
+            }
+
+            # If MenuStateUpdateMessage exists as a type in this file's package tree, register it directly
+            # (handled below on the MenuStateUpdateMessage class itself).
+        }
+
+        # MenuStateUpdateMessage: drop late FMLCommonSetup registration; main mod registers payloads.
+        # Also ensure payload is registered from RegisterPayloadHandlersEvent via a stable direct call
+        # when the main mod still only has an empty MESSAGES map at that time.
+        if ($t -match 'class MenuStateUpdateMessage|record MenuStateUpdateMessage' -or $f.Name -eq 'MenuStateUpdateMessage.java') {
+            # Remove @EventBusSubscriber + FMLCommonSetup registerMessage so it is not added too late
+            $t = $t -replace '(?m)^\s*@EventBusSubscriber(?:\([^)]*\))?\s*\r?\n', ''
+            $t = $t -replace '(?ms)^\s*@SubscribeEvent\s*\r?\n\s*public\s+static\s+void\s+registerMessage\s*\(\s*FMLCommonSetupEvent\s+event\s*\)\s*\{[^}]*\}\s*', ''
+            $t = $t -replace 'import\s+net\.neoforged\.fml\.common\.EventBusSubscriber\s*;\s*\r?\n', ''
+            $t = $t -replace 'import\s+net\.neoforged\.fml\.event\.lifecycle\.FMLCommonSetupEvent\s*;\s*\r?\n', ''
+            $t = $t -replace 'import\s+net\.neoforged\.bus\.api\.SubscribeEvent\s*;\s*\r?\n', ''
+        }
+
+        # Main mod: if MenuStateUpdateMessage.TYPE is referenced nowhere but class is on classpath via package,
+        # inject direct registration when import or simple name appears after rewrite pass.
+        if ($t -match 'class\s+\w+Mod\b' -and $t -match 'registerNetworking' -and $t -match 'PayloadRegistrar') {
+            # Detect sibling network/MenuStateUpdateMessage.java
+            $netMsg = Join-Path $f.DirectoryName 'network\MenuStateUpdateMessage.java'
+            if ((Test-Path -LiteralPath $netMsg) -and $t -notmatch 'MenuStateUpdateMessage\.TYPE') {
+                if ($t -notmatch 'import\s+[\w.]+\.network\.MenuStateUpdateMessage\s*;') {
+                    $pkg = if ($t -match '(?m)^package\s+([\w.]+)\s*;') { $Matches[1] } else { $null }
+                    if ($pkg) {
+                        $t = [regex]::Replace($t, '(?m)^(package\s+[^;]+;\s*)',
+                            "`$1`r`nimport $pkg.network.MenuStateUpdateMessage;`r`n", 1)
+                    }
+                }
+                $direct = @"
+      registrar.playBidirectional(
+         MenuStateUpdateMessage.TYPE,
+         MenuStateUpdateMessage.STREAM_CODEC,
+         MenuStateUpdateMessage::handleMenuState,
+         MenuStateUpdateMessage::handleMenuState
+      );
+"@
+                # Insert after PayloadRegistrar registrar = event.registrar(...);
+                $t = [regex]::Replace($t,
+                    '(PayloadRegistrar\s+registrar\s*=\s*event\.registrar\s*\(\s*"[^"]+"\s*\)\s*;)',
+                    ('$1' + "`r`n" + $direct), 1)
+            }
         }
 
         if ($t -ne $o) {
