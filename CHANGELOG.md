@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.2.4 — 2026-08-01
+
+### Converter rewrite safety (MOAdecor ELECTRONICS)
+- **Fix:** naive `playBidirectional` 3→4-arg expansion could mangle
+  `networkMessage.handler()` into invalid Java  
+  `handler(, handler(), handler())` (compile failure).
+- Now only rewrites the exact MCreator form  
+  `playBidirectional(id, msg.reader(), msg.handler())`  
+  and can repair the previously corrupted form.
+- **Fix:** `registerItem` rewrite no longer treats nested  
+  `new BlockItem(..., prop)` as the third argument; repairs  
+  `BlockItem(..., () -> prop)` and wraps only the final  
+  `properties` variable as `() -> properties`.
+
+Proven: **MOAdecor ELECTRONICS 1.21.8.A** → `gradlew build` after re-apply.
+
+### Packaging
+- GUI / Setup / portable package **1.2.4**
+
 ## 1.2.3 — 2026-08-01
 
 ### MCreator / NeoForge 1.21.x → 26.2 pass (MOAdecor BATH)

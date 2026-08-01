@@ -460,7 +460,7 @@ function Invoke-MechanicalJavaRewrites {
         $t = $t -replace 'import\s+net\.neoforged\.neoforge\.event\.TickEvent;', "import net.neoforged.neoforge.client.event.ClientTickEvent;`r`nimport net.neoforged.neoforge.event.tick.ServerTickEvent;"
         $t = $t -replace 'TickEvent\.ClientTickEvent', 'ClientTickEvent'
         $t = $t -replace 'TickEvent\.ServerTickEvent', 'ServerTickEvent'
-        # phase END handlers → Post events (common 1.20.1 pattern)
+        # phase END handlers ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ Post events (common 1.20.1 pattern)
         $t = [regex]::Replace($t,
             '(?s)public\s+static\s+void\s+(\w+)\s*\(\s*ClientTickEvent\s+(\w+)\s*\)\s*\{\s*if\s*\(\s*\2\.phase\s*==\s*TickEvent\.Phase\.END\s*\)\s*\{(.*?)\}\s*\}',
             'public static void $1(ClientTickEvent.Post $2) {$3}')
@@ -722,7 +722,7 @@ function Invoke-NeoForge26ApiRewritePass {
         $t = $t -replace 'Minecraft\.getInstance\(\)\.gameRenderer\.gameRenderer\.renderBuffers\(\)',
             'Minecraft.getInstance().gameRenderer.renderBuffers()'
 
-        # --- Colored Items/Blocks (ColorCollection) — full dye grid ---
+        # --- Colored Items/Blocks (ColorCollection) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â full dye grid ---
         $dyeAccessors = [ordered]@{
             'WHITE'='white'; 'ORANGE'='orange'; 'MAGENTA'='magenta'; 'LIGHT_BLUE'='lightBlue'
             'YELLOW'='yellow'; 'LIME'='lime'; 'PINK'='pink'; 'GRAY'='gray'
@@ -843,7 +843,7 @@ function Invoke-Mcreator1218ToNeoForge262Pass {
             '(?m)^(\s*)public\s+void\s+render\s*\(\s*GuiGraphicsExtractor\s+',
             '$1public void extractRenderState(GuiGraphicsExtractor ')
 
-        # imageWidth/imageHeight are final — pass size into super(...)
+        # imageWidth/imageHeight are final ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â pass size into super(...)
         # Immediate form: super(...); this.imageWidth = W; this.imageHeight = H;
         $t = [regex]::Replace($t,
             'super\(([^;]+?)\);\s*this\.imageWidth\s*=\s*(\d+)\s*;\s*this\.imageHeight\s*=\s*(\d+)\s*;',
@@ -938,18 +938,20 @@ public boolean keyPressed(KeyEvent event) {
         $t = $t -replace '(?<![\w.])minecraft\.screen\b', 'minecraft.gui.screen()'
 
         # --- DeferredRegister.Items.registerItem(..., Properties) needs Supplier/UnaryOperator ---
+        # Repair broken form produced by naive rewrite (nested BlockItem prop mistaken for registerItem 3rd arg):
+        #   new BlockItem(block, () -> prop)  ->  new BlockItem(block, prop)
+        $t = $t -replace 'new\s+BlockItem\(([^,]+),\s*\(\)\s*->\s*prop\)', 'new BlockItem($1, prop)'
+        # MCreator block helper line: registerItem(path, prop -> new BlockItem(..., prop), properties)
+        # wrap only the final Properties variable as a supplier.
         $t = [regex]::Replace($t,
-            '\.registerItem\(([^,]+),\s*([^,]+),\s*(new\s+(?:Item\.)?Properties\([^)]*\)|\w+)\s*\)',
+            '(?m)(\.registerItem\([^\n]+,\s*prop\s*->\s*new\s+BlockItem\([^\n]+,\s*prop\))\s*,\s*(\w+)\s*\)\s*;',
             {
                 param($m)
-                $a1 = $m.Groups[1].Value
-                $a2 = $m.Groups[2].Value
-                $a3 = $m.Groups[3].Value.Trim()
-                if ($a3 -match '^(?:\(\)\s*->|Supplier|UnaryOperator)') { return $m.Value }
-                if ($a3 -match '^new\s+') { return ".registerItem($a1, $a2, () -> $a3)" }
-                # variable Properties (e.g. properties) -> supplier
-                if ($a3 -match '^[A-Za-z_][\w]*$') { return ".registerItem($a1, $a2, () -> $a3)" }
-                return $m.Value
+                $head = $m.Groups[1].Value
+                $props = $m.Groups[2].Value
+                if ($props -eq 'prop') { return $m.Value }
+                if ($m.Value -match ',\s*\(\)\s*->') { return $m.Value }
+                "$head, () -> $props);"
             })
 
         # --- Payload registrar: StreamCodec<? extends FriendlyByteBuf -> ? super RegistryFriendlyByteBuf ---
@@ -966,18 +968,13 @@ public boolean keyPressed(KeyEvent event) {
         }
         # NeoForge 26.2: 3-arg playBidirectional leaves client handler null and crashes:
         # "Some clientbound payloads are missing client-side handlers"
-        # Prefer explicit 4-arg form with the same handler on both sides when only one handler is supplied.
-        $t = [regex]::Replace($t,
-            '\.playBidirectional\(([^,]+),\s*([^,]+),\s*([^,\)]+)\s*\)',
-            {
-                param($m)
-                $a1 = $m.Groups[1].Value.Trim()
-                $a2 = $m.Groups[2].Value.Trim()
-                $a3 = $m.Groups[3].Value.Trim()
-                # already 4-arg if last arg contains comma handled by different match; skip null client
-                if ($a3 -match ',\s*') { return $m.Value }
-                ".playBidirectional($a1, $a2, $a3, $a3)"
-            })
+        # Only rewrite the exact MCreator 3-arg form:
+        #   playBidirectional(id, networkMessage.reader(), networkMessage.handler())
+        # Do NOT match partial 4-arg lines or method calls mid-argument (that produced broken
+        # "handler(, handler(), handler())" syntax on MOA Electronics).
+        $t = $t -replace '\.playBidirectional\(\s*(\w+)\s*,\s*(\w+)\.reader\(\)\s*,\s*(\w+)\.handler\(\)\s*\)', '.playBidirectional($1, $2.reader(), $3.handler(), $3.handler())'
+        # Also repair already-corrupted form from older converter builds:
+        $t = $t -replace '\.playBidirectional\(\s*(\w+)\s*,\s*(\w+)\.reader\(\)\s*,\s*(\w+)\.handler\(\s*,\s*\3\.handler\(\)\s*,\s*\3\.handler\(\)\s*\)\s*\)', '.playBidirectional($1, $2.reader(), $3.handler(), $3.handler())'
 
         if ($t -ne $o) {
             [System.IO.File]::WriteAllText($f.FullName, $t)
@@ -1406,7 +1403,7 @@ $report = @"
    ``noCollission``->``noCollision``, ``GuiGraphics``->``GuiGraphicsExtractor``, container ``renderBg``->``extractBackground``,
    final ``imageWidth``/``imageHeight`` via ``super(..., w, h)``, ``keyPressed(KeyEvent)``, ``isClientSide()``,
    remove ``Tuple`` work-queue, stub broken ``ItemHandler.ITEM/ENTITY`` capability binds
-10. **ModConfigSpec order pass** (define-before-build) — prevents world-join disconnect from decompiled MCreator configs
+10. **ModConfigSpec order pass** (define-before-build) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â prevents world-join disconnect from decompiled MCreator configs
 11. Registry templates (createEntities / Registries.SOUND_EVENT / createItems / createBlocks)
 12. ``@Mod`` constructor injection template (IEventBus + ModContainer)
 13. ``@Mod.EventBusSubscriber`` -> ``LegacyEventBootstrap`` + ``addListener`` registrations
@@ -1418,7 +1415,7 @@ $report = @"
 
 - Conversion success means a **scaffold** was written. It does **not** mean the mod is loadable yet.
 - Only install jars produced by ``gradlew build`` from this output (``build/libs/*.jar``).
-- Never rename the input 1.20.1 / 1.21.x jar and treat it as a 26.2 mod — NeoForge will reject old ``versionRange`` pins.
+- Never rename the input 1.20.1 / 1.21.x jar and treat it as a 26.2 mod ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â NeoForge will reject old ``versionRange`` pins.
 
 ## What you must still fix manually
 

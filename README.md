@@ -1,6 +1,6 @@
 # Legacy Java Converter
 
-**Current release: v1.2.3**
+**Current release: v1.2.4**
 
 **Experimental** PowerShell + Windows GUI converter: **Minecraft Forge 1.20.1** and **decompiled NeoForge 1.21.x / MCreator jars** → **NeoForge 26.2** (ModDevGradle) scaffolds.
 

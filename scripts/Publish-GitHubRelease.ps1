@@ -3,13 +3,13 @@
   Create/update a GitHub Release and upload portable + setup artifacts from dist/.
 
 .EXAMPLE
-  .\scripts\Publish-GitHubRelease.ps1 -Tag v1.2.3
+  .\scripts\Publish-GitHubRelease.ps1 -Tag v1.2.4
 #>
 [CmdletBinding()]
 param(
-    [string]$Tag = 'v1.2.3',
+    [string]$Tag = 'v1.2.4',
     [string]$Repo = 'RobbieB1980/LegacyJavaConverter',
-    [string]$Name = 'RB Legacy Java Converter 1.2.3'
+    [string]$Name = 'RB Legacy Java Converter 1.2.4'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -68,16 +68,17 @@ Experimental converter: **Forge 1.20.1** / decompiled **NeoForge 1.21.x (MCreato
 | ``RB-Legacy-Java-Converter-Setup.exe`` | Windows installer (self-contained; embeds portable toolset) |
 | ``RB-Legacy-Java-Converter-Portable.zip`` | No install - extract and run ``Start-Converter.bat`` or the EXE |
 
-### What's new in 1.2.3
+### What's new in 1.2.4
 
-- **MCreator / NeoForge 1.21.x rewrite pass** (proven on MOAdecor BATH 1.21.8.A):
-  - ``shouldDisplayFluidOverlay`` / ``BlockAndTintGetter`` removed
-  - ``noCollission`` → ``noCollision``
-  - GUI: ``GuiGraphics`` → ``GuiGraphicsExtractor``, ``extractBackground``, final image size via ``super(..., w, h)``
-  - ``isClientSide()``, ``gui.screen()``, Tuple work-queue, ItemHandler capability stubs
-  - ``registerItem`` supplier form; RegistryFriendlyByteBuf payload codecs
-- **Critical networking fix:** 4-arg ``playBidirectional(handler, handler)`` so clientbound payloads have client handlers (fixes crash: *missing client-side handlers: [mod:menustate_update]*)
-- MOAdecor BATH: compile + build + **client load** on NeoForge 26.2.0.32-beta
+- **Hotfix (ELECTRONICS):** safer ``playBidirectional`` rewrite — no more mangled ``handler(, …)`` compile errors
+- **Hotfix:** safer ``registerItem`` / ``BlockItem`` rewrite — no more ``() -> prop`` inside ``BlockItem``
+- Includes all **1.2.3** MCreator 1.21.x → 26.2 work (BATH proven load; ELECTRONICS proven build)
+
+### From 1.2.3
+
+- MCreator / NeoForge 1.21.x rewrite pass (fluid overlay, noCollision, GUI extract API, isClientSide, Tuple, capabilities)
+- 4-arg ``playBidirectional`` so clientbound payloads get client handlers
+- MOAdecor BATH: compile + build + client load on NeoForge 26.2.0.32-beta
 
 ### Requirements
 
