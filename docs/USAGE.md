@@ -41,7 +41,27 @@ cd "C:\mods\the_knocker-26.2"
 .\Convert-Forge1201-ToNeoForge262.ps1 `
   -Path "C:\mods\legacy\mymod" `
   -OutputPath "C:\mods\mymod-26.2" `
-  -NeoVersion "26.2.0.32-beta" `
-  -ModDevGradleVersion "2.0.141"
+  -NeoVersion "26.2.0.66" `
+  -ModDevGradleVersion "2.0.144"
+```
+
+## Convert with dependency download + recursive port
+
+```powershell
+.\Convert-Forge1201-ToNeoForge262.ps1 `
+  -Path "C:\mods\legacy\mymod" `
+  -OutputPath "C:\mods\mymod-26.2" `
+  -DependencyJarDir "C:\mods\legacy\jars" `
+  -Compile
+# See DEPENDENCY_REPORT.md — official 26.2 jars in libs\, converted required mods in converted-deps\
+```
+
+Preview declared dependencies without writing files:
+
+```powershell
+.\Convert-Forge1201-ToNeoForge262.ps1 `
+  -Path "C:\mods\legacy\mymod" `
+  -OutputPath "C:\mods\mymod-26.2" `
+  -DryRun
 ```
 

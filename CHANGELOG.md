@@ -1,5 +1,37 @@
 # Changelog
 
+## 1.4.0 — 2026-08-23
+
+Final 26.2 converter from the Knocker + The One Who Watches (TOWW) campaign.
+
+### Jar extract
+- Copy **every non-class file** from the original jar (textures, geo, animations, sounds, data, logo, mixins).
+- Decompile report lists PNG/ogg/geo/animation/nbt counts and writes `original-jar.txt`.
+- 26.2 convert restores assets from the source tree, sibling jar, or `-OriginalJarPath` if the decompile was Java-only.
+
+### Mappings
+- Official SRG map from workstation `Minecraft_Mappings/1.20.1` flat TSV (64,225 unique, 0 conflicts) → `lib/Srg1201Official.json`.
+- `Srg1201Common.json` only holds SRGs missing from that flat map (guessed overlays were renaming `playLocalSound` → `setBlock`).
+
+### NeoForge 26.2 load
+- `DeferredRegister.Blocks.registerBlock` / `Items.registerItem` + `Properties` constructors (`Block/Item id not set`).
+- `ForgeSpawnEggItem(entity,…)` → `properties.spawnEgg(entity.get())`.
+- `queueServerWork` only on the server thread (C2ME `playLocalSound` crash).
+- `Animal.createAnimalAttributes()` so `TemptGoal` has `minecraft:tempt_range`.
+- Skip MCreator `OnInitialEntitySpawn` discard for `SPAWN_ITEM_USE` / `COMMAND` / `DISPENSER` / `MOB_SUMMONED`.
+- Do not double-register `EntityAttributeCreationEvent`.
+
+### GeckoLib 5
+- Bare geo IDs (`toww_geckolib` → `assets/<mod>/geckolib/models|animations/`).
+- Real texture PNG (never `unknown.png`); `AnimationController<>` not array wrap.
+- Procedure controller `STOP` when clip empty; do not flatten every form to pose1.
+- TOWW live stack can use completed-port `TowwGeoModel` / `TowwGeoRenderer` / `AbstractTOWWMonster`.
+- Do not store MCreator `WorldVariables` under the same SavedData id as `TowwWorldData` (`worldvars`).
+
+### Proven
+- **The Knocker** — 26.2 jar, in-game spawn.
+- **The One Who Watches** — 26.2 jar loads; GeckoLib geo/anim/textures packed; spawn-egg / summon; world-data crash fixed.
+
 ## 1.2.6 — 2026-08-01
 
 ### Networking rewrite actually applies (MOAdecor BATH retest)

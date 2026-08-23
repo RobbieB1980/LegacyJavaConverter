@@ -22,9 +22,12 @@ Minecraft mod jars are **not encrypted**. This tool **decompiles** and **unpacks
 Produces:
 
 - `src/main/java/...` (Vineflower)
-- `src/main/resources/...` (assets/data/META-INF)
+- `src/main/resources/...` (**every non-class file from the jar**: assets, data, geo, sounds, textures, pack.mcmeta, logo, mixins)
+- `original-jar.txt` (path back to the input jar)
 - `gradle.properties` stub
-- `DECOMPILE_REPORT.md`
+- `DECOMPILE_REPORT.md` (includes PNG/sound/geo/animation counts)
+
+If the decompile report shows **PNG textures = 0**, the 26.2 jar will be purple/black. Re-run from the **original jar**, not from a Java-only source dump.
 
 ### Full pipeline (jar → 26.2)
 
@@ -38,7 +41,9 @@ Produces:
 Steps:
 
 1. Decompile to `<name>-decompiled` next to the output parent  
-2. Run `Convert-Forge1201-ToNeoForge262.ps1` into your 26.2 output folder  
+2. Write `detected-dependencies.json` from `mods.toml`  
+3. Run `Convert-Forge1201-ToNeoForge262.ps1` into your 26.2 output folder  
+4. That step downloads official NeoForge 26.2 dependency jars and converts remaining **required** Forge 1.20.1 mods (see `DEPENDENCY_REPORT.md`)  
 
 ## Requirements
 

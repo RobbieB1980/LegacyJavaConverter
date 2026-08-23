@@ -13,6 +13,7 @@ Desktop.ini
 dist/
 *.log
 lib/decompiler-cache/
+lib/dep-cache/
 _smoke-decompile/
 
 # Local conversion outputs

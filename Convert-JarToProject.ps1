@@ -26,13 +26,15 @@ param(
     [string]$JavaExe = '',
     [switch]$ContinueToNeoForge262,
     [switch]$CompileAfterConvert,
-    [string]$NeoVersion = '26.2.0.32-beta',
+    [string]$NeoVersion = '26.2.0.66',
     [string]$MinecraftVersion = '26.2',
     [switch]$DryRun
 )
 
 $ErrorActionPreference = 'Stop'
 $ToolRoot = $PSScriptRoot
+$depLib = Join-Path $ToolRoot 'lib\ModDependencyPipeline.ps1'
+if (Test-Path -LiteralPath $depLib) { . $depLib }
 
 function Write-Step([string]$m) { Write-Host ""; Write-Host "==> $m" -ForegroundColor Cyan }
 function Write-Ok([string]$m) { Write-Host "    $m" -ForegroundColor Green }
@@ -79,13 +81,14 @@ function Get-VineflowerJar {
 function Get-ModHintsFromJarExtract {
     param([string]$ExtractDir)
     $hints = [ordered]@{
-        mod_id      = 'unknownmod'
-        mod_name    = 'Unknown Mod'
-        mod_version = '1.0.0'
-        loader      = 'unknown'
-        mc_hint     = ''
-        has_mixins  = $false
-        notes       = New-Object System.Collections.Generic.List[string]
+        mod_id         = 'unknownmod'
+        mod_name       = 'Unknown Mod'
+        mod_version    = '1.0.0'
+        loader         = 'unknown'
+        mc_hint        = ''
+        has_mixins     = $false
+        notes          = New-Object System.Collections.Generic.List[string]
+        dependencies   = @()
     }
 
     $modsToml = Get-ChildItem -Path $ExtractDir -Recurse -Filter 'mods.toml' -ErrorAction SilentlyContinue |
@@ -135,6 +138,16 @@ function Get-ModHintsFromJarExtract {
         $hints.notes.Add('Mixin configs present - decompiled mixins often need heavy manual repair.')
     }
 
+    $tomlText = $null
+    if ($neoforgeToml) { $tomlText = Get-Content $neoforgeToml.FullName -Raw -ErrorAction SilentlyContinue }
+    elseif ($modsToml) { $tomlText = Get-Content $modsToml.FullName -Raw -ErrorAction SilentlyContinue }
+    if ($tomlText -and (Get-Command Read-TomlDependencyBlocks -ErrorAction SilentlyContinue)) {
+        $hints.dependencies = @(Read-TomlDependencyBlocks -Text $tomlText -SelfModId $hints.mod_id)
+        if ($hints.dependencies.Count -gt 0) {
+            $hints.notes.Add("Declared dependencies: " + (($hints.dependencies | ForEach-Object { $_.ModId }) -join ', '))
+        }
+    }
+
     # Prefer package root as mod id if still unknown
     if ($hints.mod_id -eq 'unknownmod') {
         $pkg = Get-ChildItem -Path $ExtractDir -Directory -ErrorAction SilentlyContinue |
@@ -146,26 +159,51 @@ function Get-ModHintsFromJarExtract {
     return $hints
 }
 
+function Get-ResourceInventory {
+    param([string]$ResourcesDir)
+    $files = @(Get-ChildItem -LiteralPath $ResourcesDir -Recurse -File -ErrorAction SilentlyContinue)
+    $inv = [ordered]@{
+        files       = $files.Count
+        png         = @($files | Where-Object { $_.Extension -eq '.png' }).Count
+        ogg         = @($files | Where-Object { $_.Extension -in '.ogg', '.mus' }).Count
+        nbt         = @($files | Where-Object { $_.Extension -eq '.nbt' }).Count
+        json        = @($files | Where-Object { $_.Extension -eq '.json' }).Count
+        geo         = @($files | Where-Object { $_.FullName -match '\\geo\\|\\geckolib\\models\\' }).Count
+        animations  = @($files | Where-Object { $_.FullName -match '\\animations\\' }).Count
+        blockstates = @($files | Where-Object { $_.FullName -match '\\blockstates\\' }).Count
+        models      = @($files | Where-Object { $_.FullName -match '\\models\\' }).Count
+        lang        = @($files | Where-Object { $_.FullName -match '\\lang\\' }).Count
+        data        = @($files | Where-Object { $_.FullName -match '\\data\\' }).Count
+    }
+    return $inv
+}
+
 function Copy-JarResources {
+    <#
+    .SYNOPSIS
+      Copy every non-class file from the unpacked jar into src/main/resources.
+      assets/, data/, geo, sounds, textures, pack.mcmeta, logo.png, mixins, ATs.
+      Never copies .class (those are decompiled to java instead).
+    #>
     param([string]$ExtractDir, [string]$ResourcesDir)
     New-Item -ItemType Directory -Force -Path $ResourcesDir | Out-Null
-    $copyNames = @('assets', 'data', 'META-INF')
-    foreach ($n in $copyNames) {
-        $src = Join-Path $ExtractDir $n
-        if (Test-Path $src) {
-            Copy-Item $src (Join-Path $ResourcesDir $n) -Recurse -Force
-        }
+    $copied = 0
+    $skipExt = [System.Collections.Generic.HashSet[string]]::new(
+        [string[]]@('.class', '.sf', '.rsa', '.dsa', '.ec'),
+        [StringComparer]::OrdinalIgnoreCase
+    )
+    $files = @(Get-ChildItem -LiteralPath $ExtractDir -Recurse -File -ErrorAction SilentlyContinue)
+    foreach ($f in $files) {
+        if ($skipExt.Contains($f.Extension)) { continue }
+        $rel = $f.FullName.Substring($ExtractDir.Length).TrimStart('\', '/')
+        if ($rel -match '(?i)^META-INF[/\\][^/\\]+\.(SF|RSA|DSA|EC)$') { continue }
+        $dest = Join-Path $ResourcesDir $rel
+        $destDir = Split-Path $dest -Parent
+        if (-not (Test-Path $destDir)) { New-Item -ItemType Directory -Force -Path $destDir | Out-Null }
+        Copy-Item -LiteralPath $f.FullName -Destination $dest -Force
+        $copied++
     }
-    foreach ($f in @('pack.mcmeta', 'fabric.mod.json', 'quilt.mod.json', 'mcmod.info')) {
-        $src = Join-Path $ExtractDir $f
-        if (Test-Path $src) { Copy-Item $src $ResourcesDir -Force }
-    }
-    # Root-level json configs sometimes used by mods
-    Get-ChildItem $ExtractDir -File -Filter '*.json' -ErrorAction SilentlyContinue | ForEach-Object {
-        if ($_.Name -match 'mixins|refmap|accesswidener') {
-            Copy-Item $_.FullName $ResourcesDir -Force
-        }
-    }
+    return $copied
 }
 
 # -------------------- main --------------------
@@ -276,8 +314,14 @@ try {
     }
     Write-Ok "Java sources: $($javaFiles.Count) files"
 
-    Copy-JarResources -ExtractDir $extractDir -ResourcesDir $resOut
-    Write-Ok 'Resources copied (assets/data/META-INF when present)'
+    $resCount = Copy-JarResources -ExtractDir $extractDir -ResourcesDir $resOut
+    $inv = Get-ResourceInventory -ResourcesDir $resOut
+    Write-Ok ("Resources copied: {0} files (png={1} ogg={2} geo={3} animations={4} models={5} blockstates={6} nbt={7} data={8})" -f `
+        $inv.files, $inv.png, $inv.ogg, $inv.geo, $inv.animations, $inv.models, $inv.blockstates, $inv.nbt, $inv.data)
+    if ($inv.png -eq 0 -and $inv.ogg -eq 0) {
+        Write-Warn2 'Jar extract produced no textures or sounds. The 26.2 jar will be purple/black unless assets are restored later.'
+    }
+    Set-Content -Path (Join-Path $OutputPath 'original-jar.txt') -Value $JarPath -Encoding UTF8
 
     # Stub project markers for converter + IDEs
     $jarName = [IO.Path]::GetFileName($JarPath)
@@ -332,6 +376,15 @@ try {
         "| MC hint | $($hints.mc_hint) |"
         "| Mixins | $($hints.has_mixins) |"
         "| Java files | $($javaFiles.Count) |"
+        "| Resource files | $($inv.files) |"
+        "| PNG textures | $($inv.png) |"
+        "| Sounds | $($inv.ogg) |"
+        "| Geo models | $($inv.geo) |"
+        "| Animations | $($inv.animations) |"
+        "| Block/item models | $($inv.models) |"
+        "| Blockstates | $($inv.blockstates) |"
+        "| Structures (nbt) | $($inv.nbt) |"
+        "| Declared deps | $(@($hints.dependencies).Count) |"
         ""
         "## Notes"
         ""
@@ -340,8 +393,8 @@ try {
         "## Pipeline"
         ""
         "1. Done: jar extract + decompile + src layout"
-        "2. Optional: run Convert-Forge1201-ToNeoForge262.ps1 on this folder to scaffold NeoForge 26.2"
-        "3. Manual: fix decompile artifacts, deps, mixins, datapacks, GeckoLib paths, etc."
+        "2. Optional: run Convert-Forge1201-ToNeoForge262.ps1 on this folder to scaffold NeoForge 26.2 (reads detected-dependencies.json, downloads official 26.2 artifacts, converts remaining required mods)"
+        "3. Manual: fix decompile artifacts, mixins, datapacks, GeckoLib paths, remaining compile errors."
         ""
         "## Limits"
         ""
@@ -352,6 +405,11 @@ try {
     )
     Set-Content -Path (Join-Path $OutputPath 'DECOMPILE_REPORT.md') -Value ($reportLines -join [Environment]::NewLine) -Encoding UTF8
     Write-Ok "Wrote DECOMPILE_REPORT.md"
+
+    if ($hints.dependencies -and (Get-Command Write-DetectedDependenciesJson -ErrorAction SilentlyContinue)) {
+        Write-DetectedDependenciesJson -Path (Join-Path $OutputPath 'detected-dependencies.json') -Records $hints.dependencies
+        Write-Ok "Wrote detected-dependencies.json ($($hints.dependencies.Count) entries)"
+    }
 
     Write-Host ''
     Write-Host "Decompile complete: $OutputPath" -ForegroundColor Green
@@ -373,9 +431,10 @@ try {
             OutputPath       = $neoOut
             MinecraftVersion = $MinecraftVersion
             NeoVersion       = $NeoVersion
+            OriginalJarPath  = $JarPath
         }
-        if ($CompileAfterConvert) { & $converter @cargs -Compile }
-        else { & $converter @cargs }
+        if ($CompileAfterConvert) { & $converter @cargs -Compile -OriginalJarPath $JarPath }
+        else { & $converter @cargs -OriginalJarPath $JarPath }
         Write-Ok "NeoForge scaffold: $neoOut"
     }
 }

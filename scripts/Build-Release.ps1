@@ -81,6 +81,13 @@ if (Test-Path (Join-Path $RepoRoot 'docs')) {
     if (Test-Path $docsDest) { Remove-Item $docsDest -Recurse -Force }
     Copy-Item (Join-Path $RepoRoot 'docs') $docsDest -Recurse -Force
 }
+$libSrc = Join-Path $RepoRoot 'lib'
+if (Test-Path $libSrc) {
+    $libDest = Join-Path $toolsFinal 'lib'
+    if (Test-Path $libDest) { Remove-Item $libDest -Recurse -Force }
+    Copy-Item $libSrc $libDest -Recurse -Force
+    Write-Host "    tools/lib (SRG map + dependency catalog)"
+}
 
 @'
 @echo off

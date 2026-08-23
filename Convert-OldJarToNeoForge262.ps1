@@ -15,8 +15,15 @@ param(
     [Parameter(Mandatory)][string]$OutputPath,
     [string]$DecompilePath = '',
     [string]$MinecraftVersion = '26.2',
-    [string]$NeoVersion = '26.2.0.32-beta',
+    [string]$NeoVersion = '26.2.0.66',
     [string]$GeckoLibVersion = '5.5.3',
+    [int]$DependencyDepth = 0,
+    [int]$MaxDependencyDepth = 2,
+    [string]$VisitedModIds = '',
+    [string[]]$DependencyJarDir = @(),
+    [switch]$SkipDependencyConvert,
+    [switch]$SkipDependencyDownload,
+    [switch]$ConvertOptionalDependencies,
     [switch]$Compile,
     [switch]$KeepDecompile,
     [switch]$DryRun
@@ -70,8 +77,15 @@ $cargs = @{
 # Invoke converter in a child process so its "exit 0" / compile noise cannot
 # surface as a NativeCommandError under $ErrorActionPreference = 'Stop'.
 # Quote paths: Start-Process ArgumentList array splits on spaces otherwise.
-$convArgLine = "-NoProfile -ExecutionPolicy Bypass -File `"$convScript`" -Path `"$DecompilePath`" -OutputPath `"$OutputPath`" -MinecraftVersion `"$MinecraftVersion`" -NeoVersion `"$NeoVersion`" -GeckoLibVersion `"$GeckoLibVersion`""
+$convArgLine = "-NoProfile -ExecutionPolicy Bypass -File `"$convScript`" -Path `"$DecompilePath`" -OutputPath `"$OutputPath`" -MinecraftVersion `"$MinecraftVersion`" -NeoVersion `"$NeoVersion`" -GeckoLibVersion `"$GeckoLibVersion`" -DependencyDepth $DependencyDepth -MaxDependencyDepth $MaxDependencyDepth -OriginalJarPath `"$JarPath`""
+if ($VisitedModIds) { $convArgLine += " -VisitedModIds `"$VisitedModIds`"" }
 if ($Compile) { $convArgLine += ' -Compile' }
+if ($SkipDependencyConvert) { $convArgLine += ' -SkipDependencyConvert' }
+if ($SkipDependencyDownload) { $convArgLine += ' -SkipDependencyDownload' }
+if ($ConvertOptionalDependencies) { $convArgLine += ' -ConvertOptionalDependencies' }
+foreach ($depDir in @($DependencyJarDir)) {
+    if ($depDir) { $convArgLine += " -DependencyJarDir `"$depDir`"" }
+}
 
 $convProc = Start-Process -FilePath 'powershell.exe' -ArgumentList $convArgLine -WorkingDirectory $ToolRoot -Wait -PassThru -NoNewWindow
 $convCode = $convProc.ExitCode
