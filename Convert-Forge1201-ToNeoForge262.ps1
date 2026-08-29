@@ -877,11 +877,9 @@ function Invoke-ExactPrimerMigrationRules {
         }
     }
 
-    # Encoded completed conversions: apply matching semantic overlays from SolvedConversionIndex.json
-    $overlayResult = Apply-SolvedConversionOverlays -Root $Root -Profile $Profile -ModId $ModId -ToolRoot $ToolRoot
-    $touched += [int]$overlayResult.Touched
-
-    return [pscustomobject]@{ Touched=$touched; Rules=$rules; Overlays=@($overlayResult.Overlays) }
+    # Semantic overlays are applied later (after all rewrite passes) so mechanical/API
+    # renames cannot mangle solved-case files (e.g. BlockEntityType -> EntityType.Builder).
+    return [pscustomobject]@{ Touched=$touched; Rules=$rules; Overlays=@() }
 }
 
 function Invoke-NeoForge26ApiRewritePass {
@@ -2319,9 +2317,9 @@ Write-Step 'Mechanical Java rewrites (Forge -> NeoForge, Identifier, ticks, Geck
 $j = if (Test-MigrationPass $sourceProfile 'mechanical-java') { Invoke-MechanicalJavaRewrites -Root $OutputPath } else { 0 }
 Write-Ok "Touched $j Java file(s)"
 
-Write-Step 'Exact primer migration path (detected source -> 26.2) + solved overlays'
+Write-Step 'Exact primer migration path (detected source -> 26.2)'
 $exactPrimer = Invoke-ExactPrimerMigrationRules -Root $OutputPath -Profile $sourceProfile -ModId $meta.mod_id
-Write-Ok ("Applied {0} version-gated rule(s); touched {1} unit(s); overlays={2}" -f @($exactPrimer.Rules).Count, $exactPrimer.Touched, ((@($exactPrimer.Overlays) -join ', ')))
+Write-Ok ("Applied {0} version-gated rule(s); touched {1} unit(s)" -f @($exactPrimer.Rules).Count, $exactPrimer.Touched)
 
 Write-Step 'NeoForge/Minecraft 26.2 API pass (NBT, nav, teleport, weather, colors, permissions)'
 $api = if (Test-MigrationPass $sourceProfile 'neoforge-26-api') { Invoke-NeoForge26ApiRewritePass -Root $OutputPath } else { 0 }
@@ -2362,6 +2360,10 @@ Write-Ok "Mod-entry-touched $m file(s)"
 Write-Step 'EventBusSubscriber -> explicit addListener bootstrap'
 $e = if (Test-MigrationPass $sourceProfile 'event-bus') { Invoke-EventBusSubscriberPass -Root $OutputPath -Meta $meta } else { 0 }
 Write-Ok "Event-bus pass touched $e unit(s) (classes + LegacyEventBootstrap)"
+
+Write-Step 'Solved-conversion semantic overlays (final; after rewrite passes)'
+$solvedOverlays = Apply-SolvedConversionOverlays -Root $OutputPath -Profile $sourceProfile -ModId $meta.mod_id -ToolRoot $ToolRoot
+Write-Ok ("Overlays applied: {0}; files touched: {1}" -f ((@($solvedOverlays.Overlays) -join ', '), $solvedOverlays.Touched))
 
 Write-Step 'Restore assets/data (decompiled trees are often Java-only)'
 $assetsRestored = Restore-ModAssets -Source $Source -Dest $OutputPath -ModId $meta.mod_id -OriginalJarPath $OriginalJarPath

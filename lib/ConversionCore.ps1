@@ -445,7 +445,11 @@ function Apply-SolvedConversionOverlays {
         foreach ($ov in @($m.overlays)) {
             $overlayRel = [string]$ov.path
             if (-not $overlayRel) { continue }
-            $overlayPath = Join-Path $ToolRoot (Join-Path 'overlays' $overlayRel)
+            # ToolRoot is the converter tools/repo root (contains Convert-*.ps1 and lib/).
+            $overlayPath = Join-Path $ToolRoot (Join-Path 'lib\overlays' ($overlayRel -replace '/', '\'))
+            if (-not (Test-Path -LiteralPath $overlayPath) -and (Split-Path $ToolRoot -Leaf) -eq 'lib') {
+                $overlayPath = Join-Path $ToolRoot (Join-Path 'overlays' ($overlayRel -replace '/', '\'))
+            }
             if (-not (Test-Path -LiteralPath $overlayPath)) { continue }
 
             $ok = $true

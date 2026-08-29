@@ -1,3 +1,7 @@
+## 1.5.5-hotfix1 — 2026-08-29
+
+- Fixed solved overlays looking under `overlays/` instead of `lib/overlays/` (Nextgen overlay never applied).
+- Apply semantic overlays **after** all rewrite passes so `BlockEntityType` helpers are not mangled into `EntityType.Builder`.
 ## 1.5.5 — 2026-08-29
 
 Full product refresh for NeoForge **26.2.0.72**.
