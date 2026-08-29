@@ -18,7 +18,7 @@ param(
     [Parameter(Mandatory)][string]$Path,
     [Parameter(Mandatory)][string]$OutputPath,
     [string]$MinecraftVersion = '26.2',
-    [string]$NeoVersion = '26.2.0.66',
+    [string]$NeoVersion = '26.2.0.72',
     [string]$ModDevGradleVersion = '2.0.144',
     [string]$GeckoLibVersion = '5.5.3',
     [string]$SmartBrainLibVersion = '2.0.0',
@@ -32,12 +32,14 @@ param(
     [switch]$ConvertOptionalDependencies,
     [switch]$Compile,
     [switch]$DryRun,
-    [string]$OriginalJarPath = ''
+    [string]$OriginalJarPath = '',
+    [string]$SourceVersion = ''
 )
 
 $ErrorActionPreference = 'Stop'
 $ToolRoot = $PSScriptRoot
 . (Join-Path $ToolRoot 'lib\ModDependencyPipeline.ps1')
+. (Join-Path $ToolRoot 'lib\ConversionCore.ps1')
 
 function Write-Step([string]$m) { Write-Host ""; Write-Host "==> $m" -ForegroundColor Cyan }
 function Write-Ok([string]$m) { Write-Host "    $m" -ForegroundColor Green }
@@ -453,9 +455,13 @@ function Invoke-MechanicalJavaRewrites {
     }
     $files = Get-ChildItem (Join-Path $Root 'src\main\java') -Recurse -Filter '*.java' -File -ErrorAction SilentlyContinue
     $touched = 0
+    $cutoutIds = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     foreach ($f in $files) {
         $t = [System.IO.File]::ReadAllText($f.FullName)
         $o = $t
+        foreach ($m in [regex]::Matches($t, 'ItemBlockRenderTypes\.setRenderLayer\([^;]*?ModBlocks\.([A-Z0-9_]+)[^;]*?ChunkSectionLayer\.CUTOUT\s*\)')) {
+            [void]$cutoutIds.Add($m.Groups[1].Value.ToLowerInvariant())
+        }
 
         # --- MCreator 1.20.1 Vineflower: broken nearest-entity comparator ---
         $t = [regex]::Replace($t,
@@ -546,13 +552,10 @@ function Invoke-MechanicalJavaRewrites {
         # --- Entity / level accessors (1.20.1 fields -> methods) ---
         # IMPORTANT: never rewrite package paths like net.minecraft.world.level.Level
         # Only rewrite Entity field access: this.level / entity.level
-        $t = $t -replace '\bthis\.level\.isClientSide\b', 'this.level().isClientSide()'
-        $t = $t -replace '\bthis\.level\.isClientSide\(\)', 'this.level().isClientSide()'
-        $t = $t -replace '\bthis\.level\b(?!\s*[\.(])', 'this.level()'
-        $t = $t -replace '\bthis\.level\(\)\.', 'this.level().'
-        # friend.level. / entity.level. when not package (single simple identifier receiver)
-        $t = [regex]::Replace($t, '(?<![\w.])(entity|friend|mob|living|player|target|owner|self)\.level\.isClientSide\b', '$1.level().isClientSide()', 'IgnoreCase')
-        $t = [regex]::Replace($t, '(?<![\w.])(entity|friend|mob|living|player|target|owner|self)\.level\.(?!isClientSide)', '$1.level().', 'IgnoreCase')
+        $t = Convert-LevelClientSideAccess $t
+        $t = Convert-NeoForge262ApiMoves $t
+        $t = $t -replace '(?m)^\s*import\s+net\.minecraft\.client\.renderer\.ItemBlockRenderTypes;\s*\r?\n', ''
+        $t = $t -replace '(?m)^\s*ItemBlockRenderTypes\.setRenderLayer\([^;]+;\s*\r?\n', ''
         # setMaxUpStep removed - comment out whole statement line-ish
         $t = [regex]::Replace($t, '(?m)^(\s*)(.*)\.setMaxUpStep\s*\(([^;]*)\)\s*;\s*$', '$1// LEGACY: $2.setMaxUpStep($3); // removed in 26.x')
         # BlockPos.getCenter -> Vec3.atCenterOf (simple receivers; chained forms handled in 26.2 API pass)
@@ -779,7 +782,106 @@ function Invoke-MechanicalJavaRewrites {
             $touched++
         }
     }
+
+    # ItemBlockRenderTypes was removed. Preserve CUTOUT intent in the model
+    # metadata supported by NeoForge's model loader.
+    $modelRoot = Join-Path $Root 'src\main\resources\assets'
+    if (Test-Path -LiteralPath $modelRoot) {
+        foreach ($id in $cutoutIds) {
+            foreach ($model in @(Get-ChildItem -LiteralPath $modelRoot -Recurse -File -Filter "$id*.json" -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '[\\/]models[\\/]block[\\/]' })) {
+                try {
+                    $json = Get-Content -LiteralPath $model.FullName -Raw | ConvertFrom-Json
+                    if (-not $json.PSObject.Properties['render_type']) { $json | Add-Member NoteProperty render_type 'minecraft:cutout' }
+                    [IO.File]::WriteAllText($model.FullName, ($json | ConvertTo-Json -Depth 100))
+                } catch { Write-Warning "Could not add CUTOUT metadata to $($model.FullName): $($_.Exception.Message)" }
+            }
+        }
+    }
+
+    $needsCompat = Get-ChildItem (Join-Path $Root 'src\main\java') -Recurse -File -Filter '*.java' -ErrorAction SilentlyContinue |
+        Select-String -SimpleMatch 'rb.legacy.converter.compat.Legacy262Compat' -Quiet
+    if ($needsCompat) {
+        $compatPath = Join-Path $Root 'src\main\java\rb\legacy\converter\compat\Legacy262Compat.java'
+        [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($compatPath)) | Out-Null
+        $compat = @'
+package rb.legacy.converter.compat;
+
+import java.util.ArrayList;
+import java.util.List;
+import net.minecraft.client.renderer.block.dispatch.BlockStateModel;
+import net.minecraft.client.renderer.block.dispatch.BlockStateModelPart;
+import net.minecraft.util.RandomSource;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.Property;
+
+/** Mechanical bridge for APIs removed between Minecraft 1.21.x and 26.2. */
+public final class Legacy262Compat {
+    private Legacy262Compat() {}
+
+    @SuppressWarnings("deprecation")
+    public static List<BlockStateModelPart> modelParts(BlockStateModel model) {
+        List<BlockStateModelPart> parts = new ArrayList<>();
+        model.collectParts(RandomSource.create(), parts);
+        return parts;
+    }
+
+    public static BlockState copyValue(BlockState target, Property.Value<?> value) {
+        return copyCaptured(target, value);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T extends Comparable<T>> BlockState copyCaptured(BlockState target, Property.Value<T> value) {
+        Property<T> property = (Property<T>) target.getBlock().getStateDefinition().getProperty(value.property().getName());
+        return property == null ? target : target.setValue(property, value.value());
+    }
+}
+
+'@
+        [IO.File]::WriteAllText($compatPath, $compat)
+    }
     return $touched
+}
+
+function Invoke-ExactPrimerMigrationRules {
+    param([string]$Root, $Profile, [string]$ModId)
+
+    $rules = @(Get-PrimerMigrationRules -SourceVersion ([string]$Profile.SourceVersion))
+    $touched = 0
+    $javaRoot = Join-Path $Root 'src\main\java'
+
+    foreach ($file in @(Get-ChildItem -LiteralPath $javaRoot -Recurse -File -Filter '*.java' -ErrorAction SilentlyContinue)) {
+        $text = [IO.File]::ReadAllText($file.FullName)
+        $original = $text
+        if ($rules -contains 'legacy-direction-property') {
+            $text = $text.Replace('import net.minecraft.world.level.block.state.properties.DirectionProperty;', 'import net.minecraft.world.level.block.state.properties.EnumProperty;')
+            $text = $text.Replace('DirectionProperty', 'EnumProperty<Direction>')
+            $text = $text.Replace('.getNormal()', '.getUnitVec3i()')
+        }
+        if ($text -ne $original) {
+            [IO.File]::WriteAllText($file.FullName, $text)
+            $touched++
+        }
+    }
+
+    if ($rules -contains 'legacy-datagen-isolation') {
+        $legacyDatagen = Get-ChildItem -LiteralPath $javaRoot -Recurse -File -Filter '*.java' -ErrorAction SilentlyContinue |
+            Select-String -Pattern 'client\.model\.generators|ExistingFileHelper|IConditionBuilder' -Quiet
+        $gradlePath = Join-Path $Root 'build.gradle'
+        if ($legacyDatagen -and (Test-Path -LiteralPath $gradlePath)) {
+            $gradle = [IO.File]::ReadAllText($gradlePath)
+            if ($gradle -notmatch "exclude '\*\*/datagen/\*\*'") {
+                $gradle += "`r`n// 1.21.x datagen output is already present in resources; its generator API was removed.`r`nsourceSets.main.java {`r`n    exclude '**/datagen/**'`r`n    exclude '**/*DataGenerators.java'`r`n}`r`n"
+                [IO.File]::WriteAllText($gradlePath, $gradle)
+                $touched++
+            }
+        }
+    }
+
+    # Encoded completed conversions: apply matching semantic overlays from SolvedConversionIndex.json
+    $overlayResult = Apply-SolvedConversionOverlays -Root $Root -Profile $Profile -ModId $ModId -ToolRoot $ToolRoot
+    $touched += [int]$overlayResult.Touched
+
+    return [pscustomobject]@{ Touched=$touched; Rules=$rules; Overlays=@($overlayResult.Overlays) }
 }
 
 function Invoke-NeoForge26ApiRewritePass {
@@ -840,25 +942,8 @@ function Invoke-NeoForge26ApiRewritePass {
         # --- FML dist accessor ---
         $t = $t -replace 'FMLEnvironment\.dist\b', 'FMLEnvironment.getDist()'
 
-        # --- DeferredRegister items: registerItem(name, fn, new Properties()) ---
-        # 26.2 overloads take Function + optional Supplier/UnaryOperator, not a raw Properties instance.
-        # Drop trailing `new Item.Properties()` / `new Properties()` even when the factory lambda contains commas
-        # (e.g. props -> new BlockItem(block.get(), props), new Item.Properties()).
-        $t = [regex]::Replace($t,
-            '(\.registerItem\([^;]*?),\s*new\s+(?:Item\.)?Properties\(\)(\s*\))',
-            '$1$2')
-        # Also wrap a trailing bare Properties variable: registerItem(name, fn, properties) -> ..., () -> properties)
-        # (skip when already a supplier/operator, and skip the lambda param named prop).
-        $t = [regex]::Replace($t,
-            '(?m)(\.registerItem\([^\n]+,\s*(?:prop|props)\s*->\s*new\s+BlockItem\([^\n]+,\s*(?:prop|props)\))\s*,\s*(\w+)\s*\)\s*;',
-            {
-                param($m)
-                $head = $m.Groups[1].Value
-                $props = $m.Groups[2].Value
-                if ($props -eq 'prop' -or $props -eq 'props') { return $m.Value }
-                if ($m.Value -match ',\s*\(\)\s*->') { return $m.Value }
-                "$head, () -> $props);"
-            })
+        # --- DeferredRegister items: registerItem(name, fn, new Properties()) no longer matches ---
+        $t = $t -replace '\.registerItem\(([^,]+),\s*([^,]+),\s*new\s+(?:Item\.)?Properties\(\)\s*\)', '.registerItem($1, $2)'
 
         # --- SpawnEggItem(EntityType, Properties) -> Properties + ENTITY_DATA component (26.x) ---
         $t = [regex]::Replace($t,
@@ -878,127 +963,28 @@ function Invoke-NeoForge26ApiRewritePass {
         $t = $t -replace '(\?\s*\(ServerLevel\)[^,]+?\s*:\s*null)\s*,\s*2\s*,',
             '$1, net.minecraft.server.permissions.LevelBasedPermissionSet.GAMEMASTER,'
 
-        # --- Client render package moves ---
-        # Entity/layer MultiBufferSource -> SubmitNodeCollector is valid (glow overlays, armor layers).
-        # World-draw MultiBufferSource / .bufferSource() is NOT a rename: use SubmitCustomGeometryEvent
-        # + submitShapeOutline (see Invoke-SubmitCustomGeometryPass). Naive rename breaks world geometry.
-        $isWorldDraw = $t -match '\.bufferSource\s*\(|\bRenderLevelStageEvent\b|\bShapeRenderer\b|LevelRenderer\.renderLineBox|MultiBufferSource\.BufferSource|TODO 26\.2 SubmitCustomGeometryEvent|TODO 26\.2: SubmitCustomGeometryEvent'
-        $isEntitySubmit = $t -match 'extends\s+RenderLayer\b|RenderLayer\s*<|LivingEntityRenderer|EntityRenderer\s*<|HumanoidArmorLayer|GeoEntityRenderer|GeoRenderer'
-
-        # RenderLayer moved to entity.layers in modern mappings / 26.2 (Knocker-proven import).
-        $t = $t -replace 'import\s+net\.minecraft\.client\.renderer\.entity\.RenderLayer\s*;',
-            'import net.minecraft.client.renderer.entity.layers.RenderLayer;'
-
+        # --- Client render package moves (common humanoid / glow layers) ---
+        $t = $t -replace 'import\s+net\.minecraft\.client\.renderer\.MultiBufferSource\s*;',
+            'import net.minecraft.client.renderer.SubmitNodeCollector;'
         $t = $t -replace 'import\s+net\.minecraft\.client\.renderer\.RenderType\s*;',
             'import net.minecraft.client.renderer.rendertype.RenderTypes;'
         # Only rewrite classic RenderType static factories; leave other RenderType mentions.
-        $t = $t -replace '\bRenderType\.(eyes|entityCutout|entityCutoutNoCull|entityTranslucent|entityTranslucentEmissive|lines)\b', 'RenderTypes.$1'
-
-        if ($isEntitySubmit -or (-not $isWorldDraw -and $t -match '\bMultiBufferSource\b')) {
-            $t = $t -replace 'import\s+net\.minecraft\.client\.renderer\.MultiBufferSource\s*;',
-                'import net.minecraft.client.renderer.SubmitNodeCollector;'
-            $t = $t -replace '\bMultiBufferSource\b', 'SubmitNodeCollector'
-            # Armor layer: dual bakeLayer(INNER/OUTER) -> ArmorModelSet.bake (do NOT rename INNER/OUTER tokens;
-            # PLAYER_ARMOR is ArmorModelSet, not a ModelLayerLocation, so bakeLayer(PLAYER_ARMOR) does not compile).
-            $t = [regex]::Replace($t,
-                'new\s+HumanoidArmorLayer(?:<>)?\s*\(\s*this\s*,\s*new\s+HumanoidModel(?:<>)?\s*\(\s*context\.bakeLayer\(\s*ModelLayers\.PLAYER_INNER_ARMOR\s*\)\s*\)\s*,\s*new\s+HumanoidModel(?:<>)?\s*\(\s*context\.bakeLayer\(\s*ModelLayers\.PLAYER_OUTER_ARMOR\s*\)\s*\)\s*,\s*context\.getEquipmentRenderer\(\)\s*\)',
-                'new HumanoidArmorLayer(this, net.minecraft.client.renderer.entity.ArmorModelSet.bake(ModelLayers.PLAYER_ARMOR, context.getModelSet(), HumanoidModel::new), context.getEquipmentRenderer())',
-                [System.Text.RegularExpressions.RegexOptions]::Singleline)
-            # MCreator glow overlay: RenderLayer.render(PoseStack, SubmitNodeCollector, ...) is submit in 26.2
-            $t = [regex]::Replace($t,
-                'public\s+void\s+render\s*\(\s*PoseStack\s+(\w+)\s*,\s*SubmitNodeCollector\s+',
-                'public void submit(PoseStack $1, SubmitNodeCollector ')
-            # getBuffer(eyes)+renderToBuffer (plain or inside if) -> submitModel
-            $t = [regex]::Replace($t,
-                'VertexConsumer\s+\w+\s*=\s*(\w+)\.getBuffer\(\s*RenderTypes\.eyes\(([^;]+?)\)\s*\)\s*;\s*(?:\(\(HumanoidModel\)this\.getParentModel\(\)\)|this\.getParentModel\(\))\s*\.renderToBuffer\(\s*(\w+)\s*,\s*\w+\s*,\s*(\w+)\s*,\s*LivingEntityRenderer\.getOverlayCoords\((\w+)\s*,\s*[^)]+\)\s*\)\s*;',
-                '$1.order(0).submitModel(this.getParentModel(), $5, $3, RenderTypes.eyes($2), $4, LivingEntityRenderer.getOverlayCoords($5, 0.0F), -1, null, $5.outlineColor, null);')
-
-            # 26.2 RenderLayer is RenderLayer<S extends EntityRenderState, M extends EntityModel<? super S>>.
-            # Rewrite common Entity-typed layer declarations to LivingEntityRenderState + 6-arg submit.
-            if ($t -match 'extends\s+RenderLayer\s*<\s*T\s*,\s*M\s*>' -and $t -match 'T\s+extends\s+Entity') {
-                $t = [regex]::Replace($t,
-                    'class\s+(\w+)\s*<\s*T\s+extends\s+Entity\s*,\s*M\s+extends\s+EntityModel\s*<\s*T\s*>\s*>\s*extends\s+RenderLayer\s*<\s*T\s*,\s*M\s*>',
-                    'class $1<S extends net.minecraft.client.renderer.entity.state.LivingEntityRenderState, M extends EntityModel<? super S>> extends RenderLayer<S, M>')
-                $t = $t -replace 'RenderLayerParent\s*<\s*T\s*,\s*M\s*>', 'RenderLayerParent<S, M>'
-                # Old living-layer submit/render arity (entity + 6 floats) -> state + yRot/xRot
-                $t = [regex]::Replace($t,
-                    'public\s+void\s+submit\s*\(\s*PoseStack\s+(\w+)\s*,\s*SubmitNodeCollector\s+(\w+)\s*,\s*int\s+(\w+)\s*,\s*T\s+\w+\s*,\s*float\s+\w+\s*,\s*float\s+\w+\s*,\s*float\s+\w+\s*,\s*float\s+\w+\s*,\s*float\s+(\w+)\s*,\s*float\s+(\w+)\s*\)',
-                    ("@Override" + [Environment]::NewLine + "    public void submit(PoseStack `$1, SubmitNodeCollector `$2, int `$3, S state, float `$4, float `$5)"))
-                if ($t -match 'LivingEntityRenderState' -and $t -notmatch 'import\s+net\.minecraft\.client\.renderer\.entity\.state\.LivingEntityRenderState\s*;') {
-                    $t = $t -replace 'import\s+net\.minecraft\.client\.renderer\.entity\.layers\.RenderLayer\s*;',
-                        ("import net.minecraft.client.renderer.entity.layers.RenderLayer;" + [Environment]::NewLine + "import net.minecraft.client.renderer.entity.state.LivingEntityRenderState;")
-                }
-                # Drop unused Entity import when body no longer references Entity (ignore import lines).
-                $layerBody = [regex]::Replace($t, '(?m)^\s*import\s+.*$', '')
-                if ($layerBody -notmatch '(?<![\w.])Entity(?!Model|RenderState|Renderer)\b') {
-                    $t = $t -replace 'import\s+net\.minecraft\.world\.entity\.Entity\s*;\s*\r?\n', ''
-                }
-            }
-        }
-
-        if ($isWorldDraw) {
-            if ($t -notmatch 'TODO 26\.2: SubmitCustomGeometryEvent') {
-                $t = [regex]::Replace($t, '(?m)^(package\s+[^;]+;\s*)',
-                    "`$1`r`n// TODO 26.2: SubmitCustomGeometryEvent + submitShapeOutline (world MultiBufferSource/bufferSource removed)`r`n", 1)
-            }
-            # Mark dead immediate-buffer calls; geometry pass scaffolds the replacement event hook.
-            $t = [regex]::Replace($t, '(?m)^(\s*)(.*\.bufferSource\s*\([^;]*;)\s*$',
-                '$1// TODO 26.2 SubmitCustomGeometryEvent (was bufferSource): $2')
-            $t = [regex]::Replace($t, '(?m)^(\s*)(.*\bShapeRenderer\.[^;]*;)\s*$',
-                '$1// TODO 26.2 submitShapeOutline (was ShapeRenderer): $2')
-            $t = [regex]::Replace($t, '(?m)^(\s*)(.*LevelRenderer\.renderLineBox[^;]*;)\s*$',
-                '$1// TODO 26.2 submitShapeOutline (was LevelRenderer.renderLineBox): $2')
-            # Leftover endBatch after bufferSource was commented out.
-            $t = [regex]::Replace($t, '(?m)^(\s*)(.*\bendBatch\s*\(\s*\)\s*;)\s*$',
-                '$1// TODO 26.2 SubmitCustomGeometryEvent (was endBatch): $2')
-            # Drop now-unused imports that only served immediate-buffer world drawing.
-            # Ignore import lines and // comments (TODOs still mention the old symbols).
-            $bodyOnly = [regex]::Replace($t, '(?m)^\s*import\s+.*$', '')
-            $bodyOnly = [regex]::Replace($bodyOnly, '(?m)^\s*//.*$', '')
-            if ($bodyOnly -notmatch '\bMultiBufferSource\b' -and $bodyOnly -notmatch '\.bufferSource\s*\(') {
-                $t = $t -replace 'import\s+net\.minecraft\.client\.renderer\.MultiBufferSource\s*;\s*\r?\n', ''
-            }
-            if ($bodyOnly -notmatch '\bShapeRenderer\b') {
-                $t = $t -replace 'import\s+net\.minecraft\.client\.renderer\.ShapeRenderer\s*;\s*\r?\n', ''
-            }
-            # Minecraft import often only used for renderBuffers().bufferSource() in these files.
-            if ($bodyOnly -notmatch '\bMinecraft\b') {
-                $t = $t -replace 'import\s+net\.minecraft\.client\.Minecraft\s*;\s*\r?\n', ''
-            }
-            # Shapes import may only remain for commented ShapeRenderer lines.
-            if ($bodyOnly -notmatch '\bShapes\b') {
-                $t = $t -replace 'import\s+net\.minecraft\.world\.phys\.shapes\.Shapes\s*;\s*\r?\n', ''
-            }
-
-            # 26.2: RenderLevelStageEvent no longer has getStage()/Stage enum — use typed subclasses.
-            # Prefer SubmitCustomGeometryEvent for custom geometry; still rewrite stage filters so handlers compile.
-            $stageMap = [ordered]@{
-                'AFTER_SKY'                   = 'AfterSky'
-                'AFTER_SOLID_BLOCKS'          = 'AfterOpaqueBlocks'
-                'AFTER_OPAQUE_BLOCKS'         = 'AfterOpaqueBlocks'
-                'AFTER_CUTOUT_BLOCKS'         = 'AfterOpaqueBlocks'
-                'AFTER_CUTOUT_MIPPED_BLOCKS'  = 'AfterOpaqueBlocks'
-                'AFTER_ENTITIES'              = 'AfterOpaqueFeatures'
-                'AFTER_BLOCK_ENTITIES'        = 'AfterOpaqueFeatures'
-                'AFTER_TRANSLUCENT_BLOCKS'    = 'AfterTranslucentBlocks'
-                'AFTER_PARTICLES'             = 'AfterTranslucentParticles'
-                'AFTER_WEATHER'               = 'AfterWeather'
-                'AFTER_LEVEL'                 = 'AfterLevel'
-            }
-            foreach ($oldStage in $stageMap.Keys) {
-                $newStage = $stageMap[$oldStage]
-                # Rewrite method signature + drop the stage guard when present.
-                $t = [regex]::Replace($t,
-                    ("(?s)(public\s+static\s+void\s+\w+\s*\(\s*)RenderLevelStageEvent(\s+\w+\s*\)\s*\{)\s*" +
-                     "if\s*\(\s*\w+\.getStage\(\)\s*!=\s*RenderLevelStageEvent\.Stage\.$oldStage\s*\)\s*\{\s*return\s*;\s*\}"),
-                    "`$1RenderLevelStageEvent.$newStage`$2")
-                $t = [regex]::Replace($t,
-                    ("(?s)(public\s+static\s+void\s+\w+\s*\(\s*)RenderLevelStageEvent(\s+\w+\s*\)\s*\{)\s*" +
-                     "if\s*\(\s*\w+\.getStage\(\)\s*!=\s*RenderLevelStageEvent\.Stage\.$oldStage\s*\)\s*return\s*;"),
-                    "`$1RenderLevelStageEvent.$newStage`$2")
-            }
-        }
-
+        $t = $t -replace '\bRenderType\.(eyes|entityCutout|entityCutoutNoCull|entityTranslucent|entityTranslucentEmissive)\b', 'RenderTypes.$1'
+        $t = $t -replace '\bMultiBufferSource\b', 'SubmitNodeCollector'
+        # Armor layer: dual bakeLayer(INNER/OUTER) -> ArmorModelSet.bake (do NOT rename INNER/OUTER tokens;
+        # PLAYER_ARMOR is ArmorModelSet, not a ModelLayerLocation, so bakeLayer(PLAYER_ARMOR) does not compile).
+        $t = [regex]::Replace($t,
+            'new\s+HumanoidArmorLayer(?:<>)?\s*\(\s*this\s*,\s*new\s+HumanoidModel(?:<>)?\s*\(\s*context\.bakeLayer\(\s*ModelLayers\.PLAYER_INNER_ARMOR\s*\)\s*\)\s*,\s*new\s+HumanoidModel(?:<>)?\s*\(\s*context\.bakeLayer\(\s*ModelLayers\.PLAYER_OUTER_ARMOR\s*\)\s*\)\s*,\s*context\.getEquipmentRenderer\(\)\s*\)',
+            'new HumanoidArmorLayer(this, net.minecraft.client.renderer.entity.ArmorModelSet.bake(ModelLayers.PLAYER_ARMOR, context.getModelSet(), HumanoidModel::new), context.getEquipmentRenderer())',
+            [System.Text.RegularExpressions.RegexOptions]::Singleline)
+        # MCreator glow overlay: RenderLayer.render(PoseStack, SubmitNodeCollector, ...) is submit in 26.2
+        $t = [regex]::Replace($t,
+            'public\s+void\s+render\s*\(\s*PoseStack\s+(\w+)\s*,\s*SubmitNodeCollector\s+',
+            'public void submit(PoseStack $1, SubmitNodeCollector ')
+        # getBuffer(eyes)+renderToBuffer (plain or inside if) -> submitModel
+        $t = [regex]::Replace($t,
+            'VertexConsumer\s+\w+\s*=\s*(\w+)\.getBuffer\(\s*RenderTypes\.eyes\(([^;]+?)\)\s*\)\s*;\s*(?:\(\(HumanoidModel\)this\.getParentModel\(\)\)|this\.getParentModel\(\))\s*\.renderToBuffer\(\s*(\w+)\s*,\s*\w+\s*,\s*(\w+)\s*,\s*LivingEntityRenderer\.getOverlayCoords\((\w+)\s*,\s*[^)]+\)\s*\)\s*;',
+            '$1.order(0).submitModel(this.getParentModel(), $5, $3, RenderTypes.eyes($2), $4, LivingEntityRenderer.getOverlayCoords($5, 0.0F), -1, null, $5.outlineColor, null);')
         # PlayerSkin.texture() -> body().texturePath()
         $t = $t -replace '\.getSkin\(\)\.texture\(\)', '.getSkin().body().texturePath()'
 
@@ -1006,10 +992,6 @@ function Invoke-NeoForge26ApiRewritePass {
         $t = $t -replace 'import\s+net\.neoforged\.neoforge\.capabilities\.Capabilities\.ItemHandler\s*;\s*', ''
         $t = $t -replace '(?m)^(\s*)event\.registerBlockEntity\(\s*ItemHandler\.BLOCK\s*,.+$',
             '$1// TODO 26.2: item handler capability moved to Capabilities.Item + transfer API (registerBlockEntity removed by converter)'
-        # Drop unused SidedInvWrapper import when the only use was the removed ItemHandler.BLOCK registration.
-        if ($t -match 'TODO 26\.2: item handler capability' -and $t -notmatch '(?m)^\s*[^/\s].*\bSidedInvWrapper\b') {
-            $t = $t -replace 'import\s+net\.neoforged\.neoforge\.items\.wrapper\.SidedInvWrapper\s*;\s*\r?\n', ''
-        }
 
         # --- Effects / entity packages ---
         $t = $t -replace 'MobEffects\.MOVEMENT_SPEED', 'MobEffects.SPEED'
@@ -1085,37 +1067,7 @@ function Invoke-NeoForge26ApiRewritePass {
             'Minecraft.getInstance().gameRenderer.renderBuffers()'
 
         # --- Colored Items/Blocks (ColorCollection) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â full dye grid ---
-        $dyeAccessors = [ordered]@{
-            'WHITE'='white'; 'ORANGE'='orange'; 'MAGENTA'='magenta'; 'LIGHT_BLUE'='lightBlue'
-            'YELLOW'='yellow'; 'LIME'='lime'; 'PINK'='pink'; 'GRAY'='gray'
-            'LIGHT_GRAY'='lightGray'; 'CYAN'='cyan'; 'PURPLE'='purple'; 'BLUE'='blue'
-            'BROWN'='brown'; 'GREEN'='green'; 'RED'='red'; 'BLACK'='black'
-        }
-        $itemColorGroups = @(
-            @{ Suffix='WOOL'; Collection='WOOL' },
-            @{ Suffix='CARPET'; Collection='CARPET' },
-            @{ Suffix='BED'; Collection='BED' },
-            @{ Suffix='CONCRETE'; Collection='CONCRETE' },
-            @{ Suffix='CONCRETE_POWDER'; Collection='CONCRETE_POWDER' },
-            @{ Suffix='STAINED_GLASS'; Collection='STAINED_GLASS' },
-            @{ Suffix='STAINED_GLASS_PANE'; Collection='STAINED_GLASS_PANE' },
-            @{ Suffix='TERRACOTTA'; Collection='DYED_TERRACOTTA' },
-            @{ Suffix='GLAZED_TERRACOTTA'; Collection='GLAZED_TERRACOTTA' },
-            @{ Suffix='SHULKER_BOX'; Collection='DYED_SHULKER_BOX' },
-            @{ Suffix='CANDLE'; Collection='DYED_CANDLE' },
-            @{ Suffix='BANNER'; Collection='BANNER' },
-            @{ Suffix='DYE'; Collection='DYE' },
-            @{ Suffix='HARNESS'; Collection='HARNESS' },
-            @{ Suffix='BUNDLE'; Collection='DYED_BUNDLE' }
-        )
-        foreach ($g in $itemColorGroups) {
-            foreach ($c in $dyeAccessors.Keys) {
-                $t = $t.Replace("Items.${c}_$($g.Suffix)", "Items.$($g.Collection).$($dyeAccessors[$c])()")
-                $t = $t.Replace("Blocks.${c}_$($g.Suffix)", "Blocks.$($g.Collection).$($dyeAccessors[$c])()")
-            }
-        }
-        $t = $t.Replace('Blocks.CHAIN', 'Blocks.IRON_CHAIN')
-        $t = $t.Replace('Items.CHAIN', 'Items.IRON_CHAIN')
+        $t = Convert-ColorCollectionConstants $t
 
         # --- Weather / day-time (best-effort; many dims fix time in data) ---
         $t = $t -replace '(\w+)\.setWeatherParameters\(\s*([^,]+)\s*,\s*([^,]+)\s*,\s*false\s*,\s*false\s*\)',
@@ -1730,6 +1682,12 @@ function Invoke-BlockItemIdPass {
         $t = $t -replace 'REGISTRY\.register\(block\.getId\(\)\.getPath\(\),\s*\(\)\s*->\s*new BlockItem\(\(Block\)block\.get\(\),\s*new Item\.Properties\(\)\)\)',
             'REGISTRY.registerItem(block.getId().getPath(), prop -> new BlockItem((Block)block.get(), prop))'
 
+        # Custom helper used by source mods such as NextGen Furniture. A Supplier
+        # hides the registry key until after construction, which crashes in 26.2.
+        # Convert it to DeferredRegister.Blocks.registerBlock's keyed Properties
+        # function and likewise let DeferredRegister.Items inject the item id.
+        $t = Convert-CustomBlockRegistrationText -Text $t
+
         if ($t -ne $o) {
             [System.IO.File]::WriteAllText($f.FullName, $t)
             $touched++
@@ -2032,7 +1990,7 @@ import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.SubmitCustomGeometryEvent;
 
 /**
- * Auto-generated by Convert-Forge1201-ToNeoForge262 (v1.4.1+).
+ * Auto-generated by Convert-Forge1201-ToNeoForge262 (v1.5.1+).
  *
  * World-space immediate buffers (MultiBufferSource / RenderBuffers.bufferSource /
  * ShapeRenderer / LevelRenderer.renderLineBox) are gone in Minecraft 26.2.
@@ -2202,7 +2160,9 @@ function Ensure-ClientItems {
 
 function Install-WrapperFromTowwOrMdk {
     param([string]$Root)
+    # Prefer the station NeoForge 26.2 generator MDK (canonical), then legacy MDK/completed ports.
     $candidates = @(
+        'C:\rmblocal_llm\knowledge\Neoforge26.2generatortemplate',
         'F:\rob_projects\Minecraft_AI_Workstation\knowledge\neoforge\mdks\MDK-26.2-ModDevGradle',
         'F:\rob_projects\Completed\GrokBuild_MF\Completed_Projects\Java\26.2\Gradle_Workspaces\TheOneWhoWatches-26.2',
         'F:\rob_projects\Completed\GrokBuild_MF\Completed_Projects\Java\26.2\Gradle_Workspaces\Friend-26.2',
@@ -2227,6 +2187,10 @@ function Install-WrapperFromTowwOrMdk {
 # -------------------- main --------------------
 $Source = (Resolve-Path -LiteralPath $Path).Path
 if (-not (Test-Path (Join-Path $Source 'src'))) { throw "No src/ under $Source" }
+$sourceProfile = Get-SourceProfile -Root $Source -VersionOverride $SourceVersion
+if ($sourceProfile.Route -eq 'unsupported-fabric-quilt') {
+    throw "Detected $($sourceProfile.Loader) input. This converter only migrates Forge/NeoForge mods; decompile-only mode is still available."
+}
 
 if (-not [IO.Path]::IsPathRooted($OutputPath)) {
     $OutputPath = Join-Path (Get-Location) $OutputPath
@@ -2238,6 +2202,7 @@ Write-Host 'Legacy Java Converter - Forge 1.20.1 -> NeoForge 26.2 (EXPERIMENTAL)
 Write-Host "  Source : $Source"
 Write-Host "  Output : $OutputPath"
 Write-Host "  Target : Minecraft $MinecraftVersion / NeoForge $NeoVersion"
+Write-Host "  Intake : loader=$($sourceProfile.Loader) source=$($sourceProfile.SourceVersion) confidence=$($sourceProfile.Confidence) route=$($sourceProfile.Route)"
 if ($DryRun) {
     Write-Host '  DryRun : yes (preview only - no files written)' -ForegroundColor Yellow
     Write-Host ''
@@ -2274,6 +2239,25 @@ Write-Ok "Copied $n files"
 
 $meta = Get-ModMetaFromSource -Root $Source
 Write-Info "mod_id=$($meta.mod_id) group=$($meta.mod_group) version=$($meta.mod_version)"
+
+Write-Step 'Matching encoded completed solutions (SolvedConversionIndex)'
+$sourceProfile = Merge-SolvedConversionsIntoProfile -Profile $sourceProfile -ModId $meta.mod_id
+if (@($sourceProfile.AppliedSolutions).Count -gt 0) {
+    foreach ($s in @($sourceProfile.AppliedSolutions)) {
+        Write-Ok ("Solution {0}" -f $s.Id)
+    }
+} else {
+    Write-Info 'No mod-specific solved case matched; band defaults may still apply.'
+}
+if ($sourceProfile.PSObject.Properties['SolvedStopMessage'] -and $sourceProfile.SolvedStopMessage) {
+    Write-Warn2 ([string]$sourceProfile.SolvedStopMessage)
+    throw ([string]$sourceProfile.SolvedStopMessage)
+}
+
+Write-SourceProfile -Profile $sourceProfile -Path (Join-Path $OutputPath 'SOURCE_PROFILE.json')
+Write-Ok 'Wrote SOURCE_PROFILE.json (includes AppliedSolutions when matched)'
+$primerSteps = Write-PrimerQuickReference -Profile $sourceProfile -Path (Join-Path $OutputPath 'PRIMER_CHANGE_INDEX.md')
+Write-Ok "Wrote PRIMER_CHANGE_INDEX.md ($primerSteps applicable transition(s))"
 
 if (-not $LocalLibDir) {
     $guess = Join-Path (Split-Path $Source -Parent) ''
@@ -2332,50 +2316,51 @@ Write-GradleScaffold -Root $OutputPath -Meta $meta -LocalLibs $LocalLibDir -DepP
 Write-Ok 'build.gradle / settings.gradle / gradle.properties / neoforge.mods.toml'
 
 Write-Step 'Mechanical Java rewrites (Forge -> NeoForge, Identifier, ticks, GeckoLib5)'
-$j = Invoke-MechanicalJavaRewrites -Root $OutputPath
+$j = if (Test-MigrationPass $sourceProfile 'mechanical-java') { Invoke-MechanicalJavaRewrites -Root $OutputPath } else { 0 }
 Write-Ok "Touched $j Java file(s)"
 
+Write-Step 'Exact primer migration path (detected source -> 26.2) + solved overlays'
+$exactPrimer = Invoke-ExactPrimerMigrationRules -Root $OutputPath -Profile $sourceProfile -ModId $meta.mod_id
+Write-Ok ("Applied {0} version-gated rule(s); touched {1} unit(s); overlays={2}" -f @($exactPrimer.Rules).Count, $exactPrimer.Touched, ((@($exactPrimer.Overlays) -join ', ')))
+
 Write-Step 'NeoForge/Minecraft 26.2 API pass (NBT, nav, teleport, weather, colors, permissions)'
-$api = Invoke-NeoForge26ApiRewritePass -Root $OutputPath
+$api = if (Test-MigrationPass $sourceProfile 'neoforge-26-api') { Invoke-NeoForge26ApiRewritePass -Root $OutputPath } else { 0 }
 Write-Ok "API-touched $api Java file(s)"
 
 Write-Step 'SubmitCustomGeometryEvent scaffold (world MultiBufferSource / bufferSource / ShapeRenderer)'
 $geom = Invoke-SubmitCustomGeometryPass -Root $OutputPath -Meta $meta
 Write-Ok ("Geometry-pass units: {0}; scaffold written: {1}" -f $geom.touched, $geom.scaffold)
-if ($geom.hits.Count -gt 0) {
-    Write-Info ("World-draw hits ({0}): {1}" -f $geom.hits.Count, (($geom.hits | Select-Object -First 8) -join ', '))
-}
 
 Write-Step 'MCreator / NeoForge 1.21.x -> 26.2 pass (blocks GUI menus fluid overlay)'
-$m121 = Invoke-Mcreator1218ToNeoForge262Pass -Root $OutputPath
+$m121 = if (Test-MigrationPass $sourceProfile 'mcreator-1.21.x') { Invoke-Mcreator1218ToNeoForge262Pass -Root $OutputPath } else { 0 }
 Write-Ok "1.21.x-touched $m121 Java file(s)"
 
 Write-Step 'MCreator 1.20.1 residue pass (overlay, food, SavedData, effects; MCP-verified SRG)'
-$m120 = Invoke-McreatorForge1201ResiduePass -Root $OutputPath
+$m120 = if (Test-MigrationPass $sourceProfile 'mcreator-1.20.1') { Invoke-McreatorForge1201ResiduePass -Root $OutputPath } else { 0 }
 Write-Ok "1.20.1-residue-touched $m120 Java file(s)"
 
 Write-Step 'ModConfigSpec order pass (define-before-build; prevents world-join disconnect)'
-$cfg = Invoke-ModConfigSpecOrderPass -Root $OutputPath
+$cfg = if (Test-MigrationPass $sourceProfile 'config-order') { Invoke-ModConfigSpecOrderPass -Root $OutputPath } else { 0 }
 Write-Ok "Config-order-touched $cfg file(s)"
 
 Write-Step 'Registry template pass (createEntities / Registries.SOUND_EVENT / items / blocks)'
-$r = Invoke-RegistryTemplatePass -Root $OutputPath
+$r = if (Test-MigrationPass $sourceProfile 'registry') { Invoke-RegistryTemplatePass -Root $OutputPath } else { 0 }
 Write-Ok "Registry-touched $r file(s)"
 
 Write-Step 'Block/Item Properties.setId pass (registerBlock/registerItem; 26.2 NPE Block/Item id not set)'
-$ids = Invoke-BlockItemIdPass -Root $OutputPath
+$ids = if (Test-MigrationPass $sourceProfile 'block-item-id') { Invoke-BlockItemIdPass -Root $OutputPath } else { 0 }
 Write-Ok "Block/Item-id-touched $ids Java file(s)"
 
 Write-Step 'GeckoLib 5.5 texture + AnimationController pass (TOWW/Friend 26.2)'
-$geo = Invoke-GeckoLib26Pass -Root $OutputPath
+$geo = if (Test-MigrationPass $sourceProfile 'geckolib') { Invoke-GeckoLib26Pass -Root $OutputPath } else { 0 }
 Write-Ok "GeckoLib-touched $geo Java file(s)"
 
 Write-Step 'Mod entry template pass (IEventBus + ModContainer injection)'
-$m = Invoke-ModEntryTemplatePass -Root $OutputPath
+$m = if (Test-MigrationPass $sourceProfile 'mod-entry') { Invoke-ModEntryTemplatePass -Root $OutputPath } else { 0 }
 Write-Ok "Mod-entry-touched $m file(s)"
 
 Write-Step 'EventBusSubscriber -> explicit addListener bootstrap'
-$e = Invoke-EventBusSubscriberPass -Root $OutputPath -Meta $meta
+$e = if (Test-MigrationPass $sourceProfile 'event-bus') { Invoke-EventBusSubscriberPass -Root $OutputPath -Meta $meta } else { 0 }
 Write-Ok "Event-bus pass touched $e unit(s) (classes + LegacyEventBootstrap)"
 
 Write-Step 'Restore assets/data (decompiled trees are often Java-only)'
@@ -2396,6 +2381,9 @@ $report = @"
 - Source: ``$Source``
 - Output: ``$OutputPath``
 - Target: Minecraft $MinecraftVersion / NeoForge $NeoVersion
+- Detected source: $($sourceProfile.SourceVersion) ($($sourceProfile.Loader), confidence $($sourceProfile.Confidence))
+- Migration route: ``$($sourceProfile.Route)``
+- Exact primer rules: ``$(@($exactPrimer.Rules) -join ', ')``
 - Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm')
 
 ## What was automated
@@ -2416,35 +2404,26 @@ $report = @"
    weather/clock stubs, cross-dim teleport signature, Camera.position, ClipContext CollisionContext,
    displayClientMessage->sendSystemMessage, RespawnConfig.respawnData, getSpawnPos, CommandSourceStack PermissionSet,
    FMLEnvironment.getDist(), registerItem/SpawnEggItem, client RenderTypes/SubmitNodeCollector/ArmorModelSet
-9. **SubmitCustomGeometry pass**: entity/layer ``MultiBufferSource`` still renames to ``SubmitNodeCollector``;
-   world-draw ``.bufferSource()`` / ``ShapeRenderer`` / ``renderLineBox`` are annotated (not naively renamed)
-   and ``client/LegacySubmitCustomGeometryHooks.java`` is scaffolded with ``SubmitCustomGeometryEvent`` + ``submitShapeOutline``
-10. **MCreator / NeoForge 1.21.x pass** (MOAdecor BATH): drop ``shouldDisplayFluidOverlay`` / ``BlockAndTintGetter``,
+9. **MCreator / NeoForge 1.21.x pass** (MOAdecor BATH): drop ``shouldDisplayFluidOverlay`` / ``BlockAndTintGetter``,
    ``noCollission``->``noCollision``, ``GuiGraphics``->``GuiGraphicsExtractor``, container ``renderBg``->``extractBackground``,
    final ``imageWidth``/``imageHeight`` via ``super(..., w, h)``, ``keyPressed(KeyEvent)``, ``isClientSide()``,
    remove ``Tuple`` work-queue, stub broken ``ItemHandler.ITEM/ENTITY`` capability binds
-11. **ModConfigSpec order pass** (define-before-build) — prevents world-join disconnect from decompiled MCreator configs
-12. Registry templates (createEntities / Registries.SOUND_EVENT / createItems / createBlocks)
-13. ``@Mod`` constructor injection template (IEventBus + ModContainer)
-14. ``@Mod.EventBusSubscriber`` -> ``LegacyEventBootstrap`` + ``addListener`` registrations
-15. Entity level accessors (safe ``this.level()`` only), getCenter, setMaxUpStep comment-out
-16. pack.mcmeta format 107 + **templates/** neoforge.mods.toml (removes leftover resources META-INF toml that pins old MC versions)
-17. Client item stubs where models/item existed
-
-## World-draw geometry hits
-
-$(if ($geom.hits.Count) { ($geom.hits | ForEach-Object { "- ``$_``" }) -join "`n" } else { '- (none detected)' })
-- Scaffold written: $($geom.scaffold)
+10. **ModConfigSpec order pass** (define-before-build) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â prevents world-join disconnect from decompiled MCreator configs
+11. Registry templates (createEntities / Registries.SOUND_EVENT / createItems / createBlocks)
+12. ``@Mod`` constructor injection template (IEventBus + ModContainer)
+13. ``@Mod.EventBusSubscriber`` -> ``LegacyEventBootstrap`` + ``addListener`` registrations
+14. Entity level accessors (safe ``this.level()`` only), getCenter, setMaxUpStep comment-out
+15. pack.mcmeta format 107 + **templates/** neoforge.mods.toml (removes leftover resources META-INF toml that pins old MC versions)
+16. Client item stubs where models/item existed
 
 ## Important
 
 - Conversion success means a **scaffold** was written. It does **not** mean the mod is loadable yet.
 - Only install jars produced by ``gradlew build`` from this output (``build/libs/*.jar``).
-- Never rename the input 1.20.1 / 1.21.x jar and treat it as a 26.2 mod — NeoForge will reject old ``versionRange`` pins.
+- Never rename the input 1.20.1 / 1.21.x jar and treat it as a 26.2 mod ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â NeoForge will reject old ``versionRange`` pins.
 
 ## What you must still fix manually
 
-- Port former world ``bufferSource`` / ``ShapeRenderer`` bodies into ``LegacySubmitCustomGeometryHooks`` (enable the ``if (false)`` example)
 - GeckoLib 5 render/model method signatures (GeoRenderState) and remaining client ``submit`` layer bodies
 - SmartBrainLib 1.x -> 2.x API if used
 - Written books / dyed items (DataComponents) if used heavily
@@ -2473,21 +2452,29 @@ Write-Ok "Wrote $reportPath"
 
 $compileExit = 0
 if ($Compile) {
-    Write-Step 'Running compileJava (diagnostic only - conversion already succeeded)'
+    Write-Step 'Running Gradle build (compile + tests/resources + versioned JAR)'
     Push-Location $OutputPath
     try {
         # Use cmd so PowerShell does not treat Gradle stderr as a terminating error
-        cmd /c "gradlew.bat compileJava --no-daemon --stacktrace > compile-errors.log 2>&1"
+        cmd /c "gradlew.bat build --no-daemon --stacktrace > compile-errors.log 2>&1"
         $compileExit = $LASTEXITCODE
+        $null = Write-CompileDiagnosticSummary -LogPath (Join-Path $OutputPath 'compile-errors.log') -ExitCode $compileExit
         Write-Host "Gradle exit: $compileExit"
         if ($compileExit -ne 0) {
-            Write-Warn2 "compileJava failed (exit $compileExit). Scaffold is still written."
+            Write-Warn2 "Gradle build failed (exit $compileExit). Scaffold is still written."
             Write-Warn2 "See compile-errors.log in the output folder for details."
             if (Test-Path (Join-Path $OutputPath 'compile-errors.log')) {
                 Get-Content (Join-Path $OutputPath 'compile-errors.log') -Tail 40 | ForEach-Object { Write-Host "    $_" }
             }
         } else {
-            Write-Ok 'compileJava succeeded'
+            $built = @(Get-ChildItem -LiteralPath (Join-Path $OutputPath 'build\libs') -Filter '*.jar' -File -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -notmatch 'sources|javadoc' })
+            if ($built.Count -gt 0) {
+                Write-Ok "Gradle build succeeded: $($built[0].FullName)"
+            } else {
+                $compileExit = 3
+                Write-Warn2 'Gradle reported success but no installable JAR was found under build\libs.'
+            }
         }
     }
     finally {
@@ -2499,7 +2486,7 @@ Write-Host ''
 Write-Host "Conversion scaffold complete: $OutputPath" -ForegroundColor Green
 Write-Host 'Original unchanged.' -ForegroundColor Green
 if ($Compile -and $compileExit -ne 0) {
-    Write-Host "Note: optional compile failed with exit $compileExit (conversion still OK)." -ForegroundColor Yellow
+    Write-Host "Note: requested build failed with exit $compileExit; the scaffold is available for repair." -ForegroundColor Yellow
 }
 # Always exit 0 after successful scaffold so GUI does not report hard failure for diagnostic compile
 exit 0

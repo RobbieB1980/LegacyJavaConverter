@@ -42,6 +42,14 @@
   },
   "libraries": [
     {
+      "modId": "fusion",
+      "aliases": ["fusion-connected-textures"],
+      "imports": ["com.supermartijn642.fusion"],
+      "action": "official",
+      "modrinth": "fusion-connected-textures",
+      "tomlVersionRange": "[1.3.7,)"
+    },
+    {
       "modId": "geckolib",
       "aliases": ["geckolib3", "geckolib4"],
       "imports": ["software.bernie.geckolib", "com.geckolib", "GeoEntity", "GeoAnimatable", "GeoModel"],

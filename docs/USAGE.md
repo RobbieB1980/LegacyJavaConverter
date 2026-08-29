@@ -8,14 +8,15 @@
   -OutputPath "C:\mods\mymod-26.2"
 ```
 
-## Convert and capture compile errors
+## Convert and run the complete build
 
 ```powershell
 .\Convert-Forge1201-ToNeoForge262.ps1 `
   -Path "C:\mods\legacy\mymod" `
   -OutputPath "C:\mods\mymod-26.2" `
   -Compile
-# See C:\mods\mymod-26.2\compile-errors.log and LEGACY_MIGRATION_REPORT.md
+# Success produces an installable JAR in build\libs.
+# Failure preserves the scaffold and writes compile-errors.log and COMPILE_REPORT.md.
 ```
 
 ## Finished NeoForge 1.21.x jar → 26.2 scaffold

@@ -28,6 +28,7 @@ param(
     [switch]$CompileAfterConvert,
     [string]$NeoVersion = '26.2.0.66',
     [string]$MinecraftVersion = '26.2',
+    [string]$SourceVersion = '',
     [switch]$DryRun
 )
 
@@ -35,6 +36,7 @@ $ErrorActionPreference = 'Stop'
 $ToolRoot = $PSScriptRoot
 $depLib = Join-Path $ToolRoot 'lib\ModDependencyPipeline.ps1'
 if (Test-Path -LiteralPath $depLib) { . $depLib }
+. (Join-Path $ToolRoot 'lib\ConversionCore.ps1')
 
 function Write-Step([string]$m) { Write-Host ""; Write-Host "==> $m" -ForegroundColor Cyan }
 function Write-Ok([string]$m) { Write-Host "    $m" -ForegroundColor Green }
@@ -198,9 +200,7 @@ function Copy-JarResources {
         $rel = $f.FullName.Substring($ExtractDir.Length).TrimStart('\', '/')
         if ($rel -match '(?i)^META-INF[/\\][^/\\]+\.(SF|RSA|DSA|EC)$') { continue }
         $dest = Join-Path $ResourcesDir $rel
-        $destDir = Split-Path $dest -Parent
-        if (-not (Test-Path $destDir)) { New-Item -ItemType Directory -Force -Path $destDir | Out-Null }
-        Copy-Item -LiteralPath $f.FullName -Destination $dest -Force
+        Copy-FileLongPath -Source $f.FullName -Destination $dest
         $copied++
     }
     return $copied
@@ -257,7 +257,22 @@ try {
     Write-Ok "Extracted to temp work dir"
 
     $hints = Get-ModHintsFromJarExtract -ExtractDir $extractDir
-    Write-Info "Detected loader=$($hints.loader) mod_id=$($hints.mod_id) version=$($hints.mod_version)"
+    $sourceProfile = Get-SourceProfile -Root $extractDir -VersionOverride $SourceVersion
+    if ($sourceProfile.Loader -eq 'unknown' -and $hints.loader -ne 'unknown') {
+        $sourceProfile.Loader = $hints.loader
+        $sourceProfile.Route = Get-MigrationRoute -SourceVersion $sourceProfile.SourceVersion -Loader $sourceProfile.Loader
+        $sourceProfile.RecommendedPasses = @(Get-RecommendedMigrationPasses -Route $sourceProfile.Route)
+    }
+    if ($sourceProfile.SourceVersion -eq 'unknown' -and $hints.mc_hint) {
+        $detectedVersion = ConvertTo-NormalizedMinecraftVersion $hints.mc_hint
+        if ($detectedVersion) {
+            $sourceProfile.SourceVersion = $detectedVersion
+            $sourceProfile.Confidence = 'high'
+            $sourceProfile.Route = Get-MigrationRoute -SourceVersion $detectedVersion -Loader $sourceProfile.Loader
+            $sourceProfile.RecommendedPasses = @(Get-RecommendedMigrationPasses -Route $sourceProfile.Route)
+        }
+    }
+    Write-Info "Detected loader=$($sourceProfile.Loader) source_mc=$($sourceProfile.SourceVersion) route=$($sourceProfile.Route) mod_id=$($hints.mod_id)"
 
     Write-Step 'Decompiling classes (Vineflower)'
     # Vineflower: java -jar vineflower.jar <source> <destination>
@@ -308,9 +323,7 @@ try {
     foreach ($jf in $javaFiles) {
         $rel = $jf.FullName.Substring($decompileRoot.Length).TrimStart('\', '/')
         $dest = Join-Path $javaOut $rel
-        $destDir = Split-Path $dest -Parent
-        if (-not (Test-Path $destDir)) { New-Item -ItemType Directory -Force -Path $destDir | Out-Null }
-        Copy-Item $jf.FullName $dest -Force
+        Copy-FileLongPath -Source $jf.FullName -Destination $dest
     }
     Write-Ok "Java sources: $($javaFiles.Count) files"
 
@@ -322,6 +335,7 @@ try {
         Write-Warn2 'Jar extract produced no textures or sounds. The 26.2 jar will be purple/black unless assets are restored later.'
     }
     Set-Content -Path (Join-Path $OutputPath 'original-jar.txt') -Value $JarPath -Encoding UTF8
+    Write-SourceProfile -Profile $sourceProfile -Path (Join-Path $OutputPath 'SOURCE_PROFILE.json')
 
     # Stub project markers for converter + IDEs
     $jarName = [IO.Path]::GetFileName($JarPath)
@@ -333,6 +347,7 @@ try {
         "mod_group_id=com.example.$($hints.mod_id)"
         'mod_authors=Unknown'
         "mod_description=Decompiled from $jarName. Requires manual cleanup."
+        "source_minecraft_version=$($sourceProfile.SourceVersion)"
         "minecraft_version=$MinecraftVersion"
         "neo_version=$NeoVersion"
         'org.gradle.jvmargs=-Xmx2G'
@@ -374,6 +389,9 @@ try {
         "| Name | $($hints.mod_name) |"
         "| Version | $($hints.mod_version) |"
         "| MC hint | $($hints.mc_hint) |"
+        "| Detected source MC | $($sourceProfile.SourceVersion) |"
+        "| Detection confidence | $($sourceProfile.Confidence) |"
+        "| Migration route | $($sourceProfile.Route) |"
         "| Mixins | $($hints.has_mixins) |"
         "| Java files | $($javaFiles.Count) |"
         "| Resource files | $($inv.files) |"

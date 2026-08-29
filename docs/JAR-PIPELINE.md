@@ -61,7 +61,7 @@ cd "D:\mods\oldmod-26.2"
 .\gradlew.bat build
 ```
 
-3. Install **only** `build\libs\*-mc26.2-neoforge.jar` (or similar) into your Minecraft 26.2 mods folder.
+3. Install **only** the newly compiled JAR from `build\libs` into your Minecraft 26.2 mods folder. Release 1.5.0 prefixes copied installable results with the target version where the pipeline exports them.
 
 ### Common pitfall (fixed in v1.2.0)
 

@@ -44,7 +44,7 @@ public sealed class SetupForm : Form
 
         var title = new Label
         {
-            Text = AppDisplayName + " v1.4.2",
+            Text = AppDisplayName + " v1.5.5",
             Font = new Font("Segoe UI Semibold", 14f),
             ForeColor = Color.White,
             Location = new Point(24, 18),
@@ -254,13 +254,24 @@ public sealed class SetupForm : Form
         Directory.CreateDirectory(dest);
         Report(10, "Locating package...");
 
-        var payloadZip = FindPayloadZip();
-        if (payloadZip is null)
-            throw new InvalidOperationException(
-                "Could not find portable package.\n\nPlace 'portable-payload.zip' next to this installer,\nor run scripts\\Build-Release.ps1 to produce the full distribution.");
+        string? payloadZip = null;
+        try
+        {
+            payloadZip = ExtractEmbeddedPayloadZip();
+            if (payloadZip is null)
+                throw new InvalidOperationException(
+                    "This installer has no embedded portable package.\n\nRebuild with scripts\\Build-Release.ps1 so portable-payload.zip is embedded into the Setup EXE.");
 
-        Report(20, "Extracting tools...");
-        ExtractZip(payloadZip, dest, progress => Report(20 + (int)(progress * 50), "Extracting..."));
+            Report(20, "Extracting tools...");
+            ExtractZip(payloadZip, dest, progress => Report(20 + (int)(progress * 50), "Extracting..."));
+        }
+        finally
+        {
+            if (payloadZip is not null)
+            {
+                try { File.Delete(payloadZip); } catch { /* temp cleanup */ }
+            }
+        }
 
         var exe = Path.Combine(dest, ExeName);
         if (!File.Exists(exe))
@@ -361,7 +372,7 @@ public sealed class SetupForm : Form
 
     private static void WriteUninstaller(string dest, string exe)
     {
-        var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "1.4.2";
+        var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "1.5.5";
         var ps1 = Path.Combine(dest, "Uninstall.ps1");
         var cmd = Path.Combine(dest, "Uninstall.cmd");
 
@@ -408,7 +419,7 @@ Start-Process -FilePath cmd.exe -ArgumentList '/c', $cmd -WindowStyle Hidden
 
     private static void RegisterUninstall(string dest, string exe)
     {
-        var version = "1.4.2";
+        var version = "1.5.5";
         var versionFile = Path.Combine(dest, "version.txt");
         if (File.Exists(versionFile))
             version = File.ReadAllText(versionFile).Trim();
@@ -448,38 +459,24 @@ Start-Process -FilePath cmd.exe -ArgumentList '/c', $cmd -WindowStyle Hidden
         catch { /* optional */ }
     }
 
-    private static string? FindPayloadZip()
+    /// <summary>
+    /// Installer must only use the payload embedded in this EXE.
+    /// Sibling portable ZIPs beside Setup are ignored so an older zip cannot override a newer installer.
+    /// </summary>
+    private static string? ExtractEmbeddedPayloadZip()
     {
-        var baseDir = AppContext.BaseDirectory;
-        var names = new[]
-        {
-            "portable-payload.zip",
-            "RB-Legacy-Java-Converter-Portable.zip",
-            "payload.zip"
-        };
-        foreach (var n in names)
-        {
-            var p = Path.Combine(baseDir, n);
-            if (File.Exists(p)) return p;
-        }
-
         var asm = Assembly.GetExecutingAssembly();
         var resourceName = asm.GetManifestResourceNames()
             .FirstOrDefault(n => n.EndsWith("portable-payload.zip", StringComparison.OrdinalIgnoreCase)
                                  || n.Equals("portable-payload.zip", StringComparison.OrdinalIgnoreCase));
-        if (resourceName is not null)
-        {
-            var temp = Path.Combine(Path.GetTempPath(), "RB-Legacy-payload-" + Guid.NewGuid().ToString("N") + ".zip");
-            using (var stream = asm.GetManifestResourceStream(resourceName)!)
-            using (var fs = File.Create(temp))
-                stream.CopyTo(fs);
-            return temp;
-        }
+        if (resourceName is null)
+            return null;
 
-        var dev = Path.GetFullPath(Path.Combine(baseDir, "..", "..", "..", "..", "dist", "portable-payload.zip"));
-        if (File.Exists(dev)) return dev;
-
-        return null;
+        var temp = Path.Combine(Path.GetTempPath(), "RB-Legacy-payload-" + Guid.NewGuid().ToString("N") + ".zip");
+        using (var stream = asm.GetManifestResourceStream(resourceName)!)
+        using (var fs = File.Create(temp))
+            stream.CopyTo(fs);
+        return temp;
     }
 
     private static void ExtractZip(string zipPath, string dest, Action<double> progress)

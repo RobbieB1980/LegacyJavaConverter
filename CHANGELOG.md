@@ -1,31 +1,81 @@
+## 1.5.5 — 2026-08-29
+
+Full product refresh for NeoForge **26.2.0.72**.
+
+- GUI default NeoForge version set to `26.2.0.72` (was `26.2.0.32-beta`).
+- Converter default `-NeoVersion` `26.2.0.72`; Gradle wrapper prefers station MDK `knowledge/Neoforge26.2generatortemplate`.
+- Encoded completed conversions via `lib/SolvedConversionIndex.json` (auto match + overlays).
+- Registry `Block id not set` Supplier→Function fix; installer embeds payload only.
+- Exact primer rules + Nextgen/Knocker overlays; Fusion official dep-cache.
+## 1.5.5-mdk — 2026-08-29
+
+- Prefer station MDK `C:\rmblocal_llm\knowledge\Neoforge26.2generatortemplate` for Gradle wrapper bootstrap.
+- Default `-NeoVersion` bumped to `26.2.0.72` to match that template (ModDev remains `2.0.144`).
+## 1.5.4-solutions — 2026-08-29
+
+- Encoded completed conversions into `lib/SolvedConversionIndex.json` (CASE-001/CASE-002 + source-band defaults).
+- Converter auto-matches modId + detected source version, merges forced passes/transforms into `SOURCE_PROFILE.json`, and applies semantic overlays (Nextgen 1.21.1, Knocker 1.21.8).
+- Hospital/1.12 inputs are guarded to the dedicated 112 pipeline.
+## 1.5.3-installer — 2026-08-29
+
+- Setup EXE now installs **only** its embedded `portable-payload.zip`. Sibling portable ZIPs beside the installer are ignored so an older zip cannot override a newer Setup.
+## 1.5.3-unified — 2026-08-29
+
+- Ported ChatGPT **v1.5.3** registry fix: custom `Supplier`-based `registerBlock` helpers become `Function<Properties, T>` + `BLOCKS.registerBlock` / `ITEMS.registerItem` so NeoForge 26.2 injects registry ids (fixes runtime `Block id not set`).
+- `Convert-CustomBlockRegistrationText` is idempotent and wired into `Invoke-BlockItemIdPass`.
+
+## 1.5.1-unified — 2026-08-29
+
+- Unified product tree at `MC-Java-1.20.1-to-26.2-Converter`: ChatGPT v1.5.1 conversion engine + LegacyJavaConverter GUI/packaging.
+- Core loop: **detect source version** → select cumulative primer transitions/rules → convert to NeoForge 26.2.
+- Restored `Invoke-SubmitCustomGeometryPass` from the LegacyJavaConverter geometry work.
+- Re-verified NextGen Furniture **1.21.1** decompile through the unified converter: full `gradlew build` and installable `nextgen_furniture-0.0.9-beta+mc26.2-neoforge.jar`.
+
 # Changelog
 
-## 1.4.2 — 2026-08-29
+## 1.5.3 — 2026-08-29
 
-### MockMod 1.21.1 → 26.2 compile lessons
-- **registerItem:** strip trailing `new Item.Properties()` even when the item factory lambda contains commas (`props -> new BlockItem(..., props), new Item.Properties()`).
-- **World-draw cleanup:** comment leftover `endBatch()`; drop unused `MultiBufferSource` / `ShapeRenderer` imports after bufferSource annotation.
-- **RenderLevelStageEvent:** rewrite `getStage() != Stage.AFTER_*` guards to typed subclasses (`AfterTranslucentBlocks`, `AfterSky`, …) — Stage enum is gone in 26.2.
-- **RenderLayer import:** `net.minecraft.client.renderer.entity.RenderLayer` → `...entity.layers.RenderLayer`.
+- Fixed the NeoForge 26.2 runtime crash `Block id not set` for custom `Supplier`-based block registration helpers.
+- Custom block and block-item factories now receive registry-keyed properties; added idempotent regression coverage.
 
-Proven against local mock project `MockMod-1.21.1` → `MockMod-26.2` reconvert.
+## 1.5.2 — 2026-08-29
 
-### Packaging
-- GUI / Setup / portable package **1.4.2**
+- Fixed the self-contained installer preferring an older portable ZIP beside the setup EXE over its embedded payload.
+- Setup now verifies the installed application version and exact-primer migration stage before reporting success.
 
-## 1.4.1 — 2026-08-29
+## 1.5.1 — 2026-08-29
 
-### SubmitCustomGeometry / world MultiBufferSource
-- **Stop** naive world-draw `MultiBufferSource` → `SubmitNodeCollector` renames (they break `.bufferSource()` / `ShapeRenderer` / `renderLineBox` ports).
-- Entity/layer path unchanged: `MultiBufferSource` → `SubmitNodeCollector`, `render` → `submit`, glow `submitModel`, armor `ArmorModelSet`.
-- World-draw hits are annotated with `TODO 26.2: SubmitCustomGeometryEvent + submitShapeOutline`.
-- New pass writes `client/LegacySubmitCustomGeometryHooks.java` (`@SubscribeEvent` on `SubmitCustomGeometryEvent`, example `submitShapeOutline`).
-- Migration report lists world-draw hit files.
+- Primer transitions now carry executable rule IDs, so the detected source version selects only the cumulative migration path required to reach 26.2.
+- Added 1.21.1 render-state, standalone-model, block-entity value I/O, entity registration/damage, direction-property and legacy-datagen migrations.
+- Added a verified semantic overlay for NextGen Furniture 1.21.1.
+- Proved the untouched 1.21.1 decompile through the normal converter pipeline: full `gradlew build` and an installable `nextgen_furniture-0.0.9-beta+mc26.2-neoforge.jar`.
 
-Evidence: NeoForge 26.2 `SubmitCustomGeometryEvent`, `BlockEntityRenderBoundsDebugRenderer`, primer `OrderedSubmitNodeCollector#submitShapeOutline`.
+## 1.5.0 — 2026-08-29
 
-### Packaging
-- GUI / Setup / portable package **1.4.1**
+Complete staged conversion and verification release.
+
+### Detection and reference index
+- Evidence-based Forge/NeoForge source detection from 1.20.1 through 26.2.
+- Route-specific migration passes and `SOURCE_PROFILE.json`.
+- Ordered `PrimerChangeIndex.json` and generated source-specific `PRIMER_CHANGE_INDEX.md`.
+
+### Build and reports
+- `-Compile` now runs the complete Gradle build and only reports success when `build/libs` contains an installable JAR.
+- Structured compile reports, dependency report, migration report and preserved decompile report.
+- Version-prefixed installable JAR handling; the original input JAR is never copied or renamed as a result.
+
+### NeoForge 26.2 migrations
+- Package moves for block-state models, variant mutators and camera render state.
+- Entity `level()` versus block-entity `getLevel()` detection.
+- Removed `ItemBlockRenderTypes` calls migrated to model `render_type` metadata.
+- 26.2 block-model submission compatibility, packed-light lookup and standalone-model event registration.
+- Stream-based block-state property copying and registry-key item tags.
+- Fixed idempotency defects in client-side and color-collection rewrites.
+
+### Dependencies and verification
+- Dependency JSON compatibility and optional `MavenHint` handling.
+- Official Fusion 26.2 dependency resolution.
+- Verified NextGen Furniture 1.21.11 conversion with `gradlew build` and an installable NeoForge 26.2 JAR.
 
 ## 1.4.0 — 2026-08-23
 

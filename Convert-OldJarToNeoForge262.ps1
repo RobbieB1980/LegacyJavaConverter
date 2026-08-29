@@ -15,6 +15,7 @@ param(
     [Parameter(Mandatory)][string]$OutputPath,
     [string]$DecompilePath = '',
     [string]$MinecraftVersion = '26.2',
+    [string]$SourceVersion = '',
     [string]$NeoVersion = '26.2.0.66',
     [string]$GeckoLibVersion = '5.5.3',
     [int]$DependencyDepth = 0,
@@ -61,11 +62,11 @@ Write-Host "  Final 26.2: $OutputPath"
 
 if ($DryRun) {
     Write-Host 'Dry run: would decompile then convert.' -ForegroundColor Yellow
-    & $jarScript -JarPath $JarPath -OutputPath $DecompilePath -DryRun
+    & $jarScript -JarPath $JarPath -OutputPath $DecompilePath -SourceVersion $SourceVersion -DryRun
     return
 }
 
-& $jarScript -JarPath $JarPath -OutputPath $DecompilePath -MinecraftVersion $MinecraftVersion -NeoVersion $NeoVersion
+& $jarScript -JarPath $JarPath -OutputPath $DecompilePath -MinecraftVersion $MinecraftVersion -NeoVersion $NeoVersion -SourceVersion $SourceVersion
 
 $cargs = @{
     Path             = $DecompilePath
@@ -78,6 +79,7 @@ $cargs = @{
 # surface as a NativeCommandError under $ErrorActionPreference = 'Stop'.
 # Quote paths: Start-Process ArgumentList array splits on spaces otherwise.
 $convArgLine = "-NoProfile -ExecutionPolicy Bypass -File `"$convScript`" -Path `"$DecompilePath`" -OutputPath `"$OutputPath`" -MinecraftVersion `"$MinecraftVersion`" -NeoVersion `"$NeoVersion`" -GeckoLibVersion `"$GeckoLibVersion`" -DependencyDepth $DependencyDepth -MaxDependencyDepth $MaxDependencyDepth -OriginalJarPath `"$JarPath`""
+if ($SourceVersion) { $convArgLine += " -SourceVersion `"$SourceVersion`"" }
 if ($VisitedModIds) { $convArgLine += " -VisitedModIds `"$VisitedModIds`"" }
 if ($Compile) { $convArgLine += ' -Compile' }
 if ($SkipDependencyConvert) { $convArgLine += ' -SkipDependencyConvert' }
@@ -112,5 +114,14 @@ Write-Host "  NeoForge 26.2      : $OutputPath"
 Write-Host ''
 Write-Host 'Next: open the 26.2 project and run gradlew build. Install ONLY build/libs output.' -ForegroundColor Cyan
 Write-Host 'Do NOT rename/copy the original input jar into a 26.2 mods folder.' -ForegroundColor Yellow
-# Always succeed for GUI once decompile + scaffold exist
+# A requested build is only complete when an installable jar exists.
+if ($Compile) {
+    $builtJars = @(Get-ChildItem -LiteralPath (Join-Path $OutputPath 'build\libs') -Filter '*.jar' -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -notmatch 'sources|javadoc' })
+    if ($builtJars.Count -eq 0) {
+        Write-Warning 'Scaffold completed, but the requested Gradle build did not produce an installable JAR.'
+        exit 2
+    }
+    Write-Host "Installable JAR: $($builtJars[0].FullName)" -ForegroundColor Green
+}
 exit 0

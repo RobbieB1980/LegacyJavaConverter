@@ -85,7 +85,7 @@ function Read-TomlDependencyBlocks {
             Source       = 'toml'
         }) | Out-Null
     }
-    return ,$list.ToArray()
+    return $list.ToArray()
 }
 
 function Read-GradleMavenDependencies {
@@ -109,7 +109,7 @@ function Read-GradleMavenDependencies {
             MavenHint    = $expanded
         }) | Out-Null
     }
-    return ,$list.ToArray()
+    return $list.ToArray()
 }
 
 function Read-JarJarMetadata {
@@ -135,7 +135,7 @@ function Read-JarJarMetadata {
             Source       = 'jarjar'
         }) | Out-Null
     }
-    return ,$list.ToArray()
+    return $list.ToArray()
 }
 
 function Read-ImportDetectedLibraries {
@@ -161,7 +161,7 @@ function Read-ImportDetectedLibraries {
             }) | Out-Null
         }
     }
-    return ,$list.ToArray()
+    return $list.ToArray()
 }
 
 function Read-DetectedDependenciesJson {
@@ -171,12 +171,27 @@ function Read-DetectedDependenciesJson {
     try {
         $j = Get-Content -LiteralPath $p -Raw | ConvertFrom-Json
         $out = @()
+        # v1.4.0 could write one object with parallel arrays. Accept that
+        # shape so an existing decompile does not need to be repeated.
+        if ($j.ModId -is [array]) {
+            for ($i = 0; $i -lt $j.ModId.Count; $i++) {
+                $out += [pscustomobject]@{
+                    ModId        = [string]$j.ModId[$i]
+                    Required     = [bool]$j.Required[$i]
+                    VersionRange = [string]$j.VersionRange[$i]
+                    Source       = $(if ($j.Source[$i]) { [string]$j.Source[$i] } else { 'detected-json' })
+                    MavenHint    = ''
+                }
+            }
+            return $out
+        }
         foreach ($d in @($j)) {
             $out += [pscustomobject]@{
                 ModId        = [string]$d.ModId
                 Required     = [bool]$d.Required
                 VersionRange = [string]$d.VersionRange
                 Source       = $(if ($d.Source) { [string]$d.Source } else { 'detected-json' })
+                MavenHint    = $(if ($d.MavenHint) { [string]$d.MavenHint } else { '' })
             }
         }
         return $out
@@ -209,7 +224,7 @@ function Merge-DependencyRecords {
     }
     $out = New-Object System.Collections.Generic.List[object]
     foreach ($k in $map.Keys) { [void]$out.Add($map[$k]) }
-    return ,$out.ToArray()
+    return $out.ToArray()
 }
 
 function Read-ProjectDependencies {
@@ -586,6 +601,10 @@ function Resolve-AndAcquireDependencies {
         $proc = Start-Process -FilePath 'powershell.exe' -ArgumentList $argLine -Wait -PassThru -NoNewWindow
         $code = $proc.ExitCode
         $builtJar = $null
+        if ($code -ne 0 -or -not (Test-Path (Join-Path $depOut 'build.gradle'))) {
+            $resolved.Add((New-ResolvedDependency -Record $rec -Action 'gap' -Status 'blocked' -Note "Dependency conversion failed (exit $code); no usable Gradle project was produced from $srcJar" -ConvertedProject '')) | Out-Null
+            continue
+        }
         if (Test-Path (Join-Path $depOut 'build.gradle')) {
             $libs = Join-Path $depOut 'build\libs'
             if (-not (Test-Path $libs)) {
@@ -615,7 +634,7 @@ function Resolve-AndAcquireDependencies {
         $resolved.Add((New-ResolvedDependency -Record $rec -Action 'convert' -Status $(if ($libCopy) { 'converted-jar' } else { 'converted-scaffold' }) -Note $note -JarPath $libCopy -ConvertedProject $depOut -TomlRange '[1.0,)' -ModrinthSlug $modrinthSlug)) | Out-Null
     }
 
-    return ,$resolved.ToArray()
+    return $resolved.ToArray()
 }
 
 function New-DependencyGradlePlan {
@@ -732,7 +751,7 @@ function Write-DependencyReport {
 
 function Write-DetectedDependenciesJson {
     param([string]$Path, $Records)
-    $payload = @($Records | ForEach-Object {
+    $payload = @(@($Records) | ForEach-Object {
             [pscustomobject]@{
                 ModId        = $_.ModId
                 Required     = $_.Required
@@ -740,5 +759,6 @@ function Write-DetectedDependenciesJson {
                 Source       = $_.Source
             }
         })
-    ($payload | ConvertTo-Json -Depth 4) | Set-Content -Path $Path -Encoding UTF8
+    # -InputObject preserves the JSON array even when there is one record.
+    ConvertTo-Json -InputObject $payload -Depth 4 | Set-Content -Path $Path -Encoding UTF8
 }

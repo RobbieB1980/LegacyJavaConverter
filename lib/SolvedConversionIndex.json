@@ -1,0 +1,185 @@
+{
+  "schemaVersion": 1,
+  "description": "Encoded completed conversions. The converter matches modId + sourceVersion and applies overlays, forced passes, and named transforms automatically.",
+  "solutions": [
+    {
+      "id": "CASE-001-nextgen-furniture-1.21.1",
+      "modIds": ["nextgen_furniture"],
+      "sourceVersions": ["1.21.1"],
+      "sourceVersionAliases": ["1.21.11"],
+      "routeHint": "neoforge-1.21.x",
+      "forcePasses": ["mechanical-java", "neoforge-26-api", "block-item-id", "mcreator-1.21.x", "assets"],
+      "forceRules": [],
+      "transforms": ["custom-block-registration", "client-package-moves", "cutout-render-type", "fusion-official"],
+      "overlays": [
+        {
+          "path": "nextgen-furniture/1.21.1",
+          "requireAnyFile": [
+            "src/main/java/net/nhatjs/nextgen_furniture/blockentity/renderer/ConsoleRenderer.java",
+            "src/main/java/net/nhatjs/nextgen_furniture/blockentity/renderer/LaptopRenderer.java"
+          ]
+        }
+      ],
+      "dependencyHints": ["fusion"],
+      "notes": "Proven full gradlew build + installable jar. Overlay supplies BER/standalone semantics."
+    },
+    {
+      "id": "CASE-002-friend-1.20.1",
+      "modIds": ["friend"],
+      "sourceVersions": ["1.20.1"],
+      "routeHint": "forge-1.20.1",
+      "forcePasses": ["srg-1.20.1", "mechanical-java", "neoforge-26-api", "geckolib", "event-bus", "registry", "block-item-id"],
+      "transforms": ["client-package-moves", "submit-custom-geometry"],
+      "overlays": [],
+      "notes": "Friend-26.2 completed jar; geometry/API passes proven on this mod."
+    },
+    {
+      "id": "CASE-002-toww-1.20.1",
+      "modIds": ["the_one_who_watches", "toww"],
+      "sourceVersions": ["1.20.1"],
+      "routeHint": "forge-1.20.1",
+      "forcePasses": ["srg-1.20.1", "mechanical-java", "neoforge-26-api", "geckolib", "mcreator-1.20.1", "registry", "block-item-id", "event-bus"],
+      "transforms": ["client-package-moves"],
+      "overlays": [],
+      "notes": "TOWW completed jar; GeckoLib5 + MCreator 1.20.1 residue passes."
+    },
+    {
+      "id": "CASE-002-knocker-1.21.8",
+      "modIds": ["the_knocker"],
+      "sourceVersions": ["1.21.8"],
+      "routeHint": "neoforge-1.21.x",
+      "forcePasses": ["mechanical-java", "neoforge-26-api", "mcreator-1.21.x", "registry", "block-item-id", "event-bus"],
+      "transforms": ["client-package-moves"],
+      "overlays": [
+        {
+          "path": "the-knocker/1.21.8",
+          "requireAnyFile": [
+            "src/main/java/net/mcreator/theknocker"
+          ]
+        }
+      ],
+      "notes": "Knocker completed jar; KnockerCompat overlay for respawn/command helpers."
+    },
+    {
+      "id": "CASE-002-moa-bath-1.21.8",
+      "modIds": ["moa_bath"],
+      "sourceVersions": ["1.21.8"],
+      "routeHint": "neoforge-1.21.x",
+      "forcePasses": ["mechanical-java", "neoforge-26-api", "mcreator-1.21.x", "registry", "block-item-id", "config-order", "assets"],
+      "transforms": ["client-package-moves", "cutout-render-type"],
+      "overlays": [],
+      "notes": "MOAdecor BATH proven networking/GUI/MCreator 1.21.x pass."
+    },
+    {
+      "id": "CASE-002-moa-electronics-1.21.8",
+      "modIds": ["moa_decor_electronics"],
+      "sourceVersions": ["1.21.8"],
+      "routeHint": "neoforge-1.21.x",
+      "forcePasses": ["mechanical-java", "neoforge-26-api", "mcreator-1.21.x", "registry", "block-item-id", "config-order", "assets"],
+      "transforms": ["client-package-moves", "cutout-render-type"],
+      "overlays": [],
+      "notes": "MOAdecor ELECTRONICS; registerItem Properties rewrite lessons."
+    },
+    {
+      "id": "CASE-002-moa-garden-1.21.8",
+      "modIds": ["moa_garden"],
+      "sourceVersions": ["1.21.8"],
+      "routeHint": "neoforge-1.21.x",
+      "forcePasses": ["mechanical-java", "neoforge-26-api", "mcreator-1.21.x", "registry", "block-item-id", "config-order", "assets"],
+      "transforms": ["client-package-moves", "cutout-render-type"],
+      "overlays": [],
+      "notes": "MOAdecor GARDEN; playBidirectional/registerOne networking lessons."
+    },
+    {
+      "id": "CASE-002-moa-lights-1.21.8",
+      "modIds": ["moa_lights"],
+      "sourceVersions": ["1.21.8"],
+      "routeHint": "neoforge-1.21.x",
+      "forcePasses": ["mechanical-java", "neoforge-26-api", "mcreator-1.21.x", "registry", "block-item-id", "config-order", "assets"],
+      "transforms": ["client-package-moves", "cutout-render-type"],
+      "overlays": [],
+      "notes": "MOAdecor LIGHTS."
+    },
+    {
+      "id": "CASE-002-moa-science-1.21.8",
+      "modIds": ["moa_science"],
+      "sourceVersions": ["1.21.8"],
+      "routeHint": "neoforge-1.21.x",
+      "forcePasses": ["mechanical-java", "neoforge-26-api", "mcreator-1.21.x", "registry", "block-item-id", "config-order", "assets"],
+      "transforms": ["client-package-moves", "cutout-render-type"],
+      "overlays": [],
+      "notes": "MOAdecor SCIENCE."
+    },
+    {
+      "id": "CASE-002-buildpaste-26.1.2",
+      "modIds": ["buildpaste"],
+      "sourceVersions": ["26.1", "26.1.1", "26.1.2"],
+      "routeHint": "neoforge-26.0-26.1",
+      "forcePasses": ["mechanical-java", "neoforge-26-api", "registry", "block-item-id", "assets"],
+      "transforms": ["client-package-moves"],
+      "overlays": [],
+      "notes": "26.1.x short delta to 26.2."
+    },
+    {
+      "id": "CASE-002-creativesurvival-26.1.2",
+      "modIds": ["creativesurvival"],
+      "sourceVersions": ["26.1", "26.1.1", "26.1.2"],
+      "routeHint": "neoforge-26.0-26.1",
+      "forcePasses": ["mechanical-java", "neoforge-26-api", "registry", "block-item-id", "assets"],
+      "transforms": [],
+      "overlays": [],
+      "notes": "Template bump 26.1.2 to 26.2."
+    },
+    {
+      "id": "CASE-002-chaoskit-26.1.2",
+      "modIds": ["pchaoskit"],
+      "sourceVersions": ["26.1", "26.1.1", "26.1.2"],
+      "routeHint": "neoforge-26.0-26.1",
+      "forcePasses": ["mechanical-java", "neoforge-26-api", "registry", "block-item-id", "mcreator-1.21.x", "assets"],
+      "transforms": [],
+      "overlays": [],
+      "notes": "MCreator/NeoForge 26.1.2 workspace bumped to 26.2."
+    },
+    {
+      "id": "CASE-002-hospital-1.12.2",
+      "modIds": ["the_hospital_mod"],
+      "sourceVersions": ["1.12", "1.12.1", "1.12.2"],
+      "routeHint": "unsupported-needs-112-pipeline",
+      "forcePasses": [],
+      "transforms": [],
+      "overlays": [],
+      "stopWithMessage": "Hospital/Forge 1.12.x conversions use Convert-112ToNeoForge262 (not this 1.20.1-26.2 pipeline). See CASE-002 hospital workspace.",
+      "notes": "Encoded as guard so agents/converter do not pretend the 1.20.1 pipeline covers 1.12."
+    }
+  ],
+  "bandDefaults": [
+    {
+      "id": "BAND-forge-1.20.1",
+      "matchSourceVersions": ["1.20.1"],
+      "matchLoaders": ["forge"],
+      "forcePasses": ["srg-1.20.1", "mechanical-java", "neoforge-26-api", "mcreator-1.20.1", "geckolib", "registry", "block-item-id", "event-bus"],
+      "transforms": ["custom-block-registration", "client-package-moves", "submit-custom-geometry"]
+    },
+    {
+      "id": "BAND-neoforge-1.21.8",
+      "matchSourceVersions": ["1.21.8"],
+      "matchLoaders": ["neoforge"],
+      "forcePasses": ["mechanical-java", "neoforge-26-api", "mcreator-1.21.x", "registry", "block-item-id", "config-order", "assets"],
+      "transforms": ["custom-block-registration", "client-package-moves", "cutout-render-type"]
+    },
+    {
+      "id": "BAND-neoforge-1.21.1",
+      "matchSourceVersions": ["1.21.1", "1.21.11"],
+      "matchLoaders": ["neoforge"],
+      "forcePasses": ["mechanical-java", "neoforge-26-api", "block-item-id", "assets"],
+      "transforms": ["custom-block-registration", "client-package-moves", "cutout-render-type"]
+    },
+    {
+      "id": "BAND-neoforge-26.1",
+      "matchSourceVersions": ["26.1", "26.1.1", "26.1.2"],
+      "matchLoaders": ["neoforge"],
+      "forcePasses": ["mechanical-java", "neoforge-26-api", "registry", "block-item-id", "assets"],
+      "transforms": ["client-package-moves"]
+    }
+  ]
+}

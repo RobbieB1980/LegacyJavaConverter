@@ -43,7 +43,7 @@ public sealed class MainForm : Form
 
     public MainForm()
     {
-        Text = "RB Legacy Java Converter v1.4.2 — Project / JAR → NeoForge 26.2";
+        Text = "RB Legacy Java Converter v1.5.5 — Project / JAR → NeoForge 26.2";
         ClientSize = new Size(980, 760);
         MinimumSize = new Size(840, 640);
         StartPosition = FormStartPosition.CenterScreen;
@@ -67,7 +67,7 @@ public sealed class MainForm : Form
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
         header.Controls.Add(new Label
         {
-            Text = "RB Legacy Java Converter v1.4.2 — Project or finished JAR → NeoForge 26.2",
+            Text = "RB Legacy Java Converter v1.5.5 — Project or finished JAR → NeoForge 26.2",
             Font = new Font("Segoe UI Semibold", 12f),
             ForeColor = Color.White,
             AutoSize = true,
@@ -145,7 +145,7 @@ public sealed class MainForm : Form
             Margin = new Padding(0, 0, 0, 8)
         };
         versions.Controls.Add(LabeledField("Minecraft", _txtMc, 90, "26.2"));
-        versions.Controls.Add(LabeledField("NeoForge", _txtNeo, 170, "26.2.0.32-beta"));
+        versions.Controls.Add(LabeledField("NeoForge", _txtNeo, 170, "26.2.0.72"));
         versions.Controls.Add(LabeledField("GeckoLib", _txtGecko, 90, "5.5.3"));
 
         var options = new FlowLayoutPanel
@@ -623,7 +623,7 @@ public sealed class MainForm : Form
     {
         var inputPath = _txtInput.Text.Trim();
         var outputPath = _txtOutput.Text.Trim();
-        var neo = string.IsNullOrWhiteSpace(_txtNeo.Text) ? "26.2.0.32-beta" : _txtNeo.Text.Trim();
+        var neo = string.IsNullOrWhiteSpace(_txtNeo.Text) ? "26.2.0.72" : _txtNeo.Text.Trim();
         var mc = string.IsNullOrWhiteSpace(_txtMc.Text) ? "26.2" : _txtMc.Text.Trim();
         var gecko = string.IsNullOrWhiteSpace(_txtGecko.Text) ? "5.5.3" : _txtGecko.Text.Trim();
         var jarMode = _radJar.Checked;

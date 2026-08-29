@@ -7,9 +7,9 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$Tag = 'v1.4.2',
+    [string]$Tag = 'v1.5.5',
     [string]$Repo = 'RobbieB1980/LegacyJavaConverter',
-    [string]$Name = 'RB Legacy Java Converter 1.4.2'
+    [string]$Name = 'RB Legacy Java Converter 1.5.5'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -59,26 +59,24 @@ function Invoke-GitHubJson([string]$Method, [string]$Uri, [hashtable]$BodyObj = 
 $notes = @"
 ## RB Legacy Java Converter $Tag
 
-Experimental converter: **Forge 1.20.1** / decompiled **NeoForge 1.21.x (MCreator)** jars → **NeoForge 26.2**.
+Converts **Forge/NeoForge 1.20.1–26.1** (and decompiled jars) → **NeoForge 26.2** (default **26.2.0.72**).
 
 ### Downloads
 
 | File | Description |
 |------|-------------|
-| ``RB-Legacy-Java-Converter-Setup.exe`` | Windows installer (self-contained; embeds portable toolset) |
-| ``RB-Legacy-Java-Converter-Portable.zip`` | No install - extract and run ``Start-Converter.bat`` or the EXE |
+| ``RB-Legacy-Java-Converter-Setup.exe`` | Windows installer (self-contained; **embeds** portable toolset only) |
+| ``RB-Legacy-Java-Converter-Portable.zip`` | No install — extract and run ``Start-Converter.bat`` or the EXE |
 
-### What's new in 1.4.2
+### What's new in 1.5.5
 
-- **SubmitCustomGeometry pass:** stop naive world-draw ``MultiBufferSource`` → ``SubmitNodeCollector`` renames
-- Entity/layer path unchanged (``submit`` / glow / armor)
-- World ``.bufferSource()`` / ``ShapeRenderer`` / ``renderLineBox`` annotated with TODO 26.2
-- Scaffolds ``client/LegacySubmitCustomGeometryHooks.java`` using ``SubmitCustomGeometryEvent`` + ``submitShapeOutline``
-- Migration report lists world-draw hit files
-
-### Includes 1.4.0
-
-- Knocker + The One Who Watches campaign: jar asset restore, SRG map, DeferredRegister id/spawn-egg, GeckoLib 5 fixes
+- GUI + converter default NeoForge version **26.2.0.72**
+- Station MDK preferred for Gradle wrapper: ``Neoforge26.2generatortemplate``
+- ``SolvedConversionIndex.json`` auto-matches completed conversions (Nextgen, Friend, TOWW, Knocker, MOAdecor, …)
+- Semantic overlays (Nextgen 1.21.1, Knocker 1.21.8) + exact primer rules
+- Registry fix: custom ``Supplier`` ``registerBlock`` → ``Function<Properties,T>`` (``Block id not set``)
+- Installer ignores sibling portable ZIPs; uses embedded payload only
+- Fusion official Modrinth/dep-cache path
 
 ### Requirements
 
@@ -90,7 +88,7 @@ Experimental converter: **Forge 1.20.1** / decompiled **NeoForge 1.21.x (MCreato
 
 - Original input is never modified (always writes to output folder).
 - Setup installs under ``%LOCALAPPDATA%\RB-Legacy-Java-Converter`` by default (no admin required).
-- Conversion scaffold success ≠ always loadable; still run ``gradlew build`` and test in-game.
+- Detect source version → primer path → solved overlays/passes → ``gradlew build`` for installable jars.
 "@
 
 Write-Host "==> Checking for existing release $Tag" -ForegroundColor Cyan
