@@ -1,6 +1,6 @@
 # Legacy Java Converter
 
-**Current release: v1.4.0**
+**Current release: v1.4.1**
 
 **Experimental** PowerShell + Windows GUI converter: **Minecraft Forge 1.20.1** and **decompiled NeoForge 1.21.x / MCreator jars** → **NeoForge 26.2** (ModDevGradle) scaffolds.
 
@@ -99,6 +99,7 @@ A `LEGACY_MIGRATION_REPORT.md` is written in the output folder.
 5. Tick event rewrites, `ResourceLocation` → `Identifier`
 6. GeckoLib 4 → 5 package paths + controller constructor shape
 7. **26.2 API pass** (Friend + Knocker + BuildPaste lessons): NBT OrEmpty, navigation, spawn reason, permissions, full ColorCollection grid (`Items`/`Blocks`), `EntityTypes` registry fields, weather/clock stubs, teleport signature, `sendSystemMessage`, respawn/`getSpawnPos`, `CommandSourceStack` PermissionSet, `FMLEnvironment.getDist()`, spawn eggs / `registerItem`, client `RenderTypes`/`ArmorModelSet`, `mainCamera` / `gameRenderer.renderBuffers()`, …
+7b. **SubmitCustomGeometry pass**: entity/layer `MultiBufferSource` → `SubmitNodeCollector`; world `.bufferSource()` / `ShapeRenderer` annotated + `LegacySubmitCustomGeometryHooks` scaffold (`SubmitCustomGeometryEvent` / `submitShapeOutline`)
 8. Registry templates + `@Mod.EventBusSubscriber` → bootstrap
 9. **Removes leftover `resources/META-INF/neoforge.mods.toml`** so templates pin Minecraft **`[26.2]`** (prevents “wrong MC version” load errors from 1.21.x jars)
 10. Gradle wrapper bootstrap when a local reference exists
@@ -106,7 +107,7 @@ A `LEGACY_MIGRATION_REPORT.md` is written in the output folder.
 ## What you must still fix manually
 
 - Remaining compile errors after scaffold (especially complex client render / networking)
-- World-space custom geometry still on `MultiBufferSource` / `.bufferSource()` — port to `SubmitCustomGeometryEvent` + `submitShapeOutline`
+- World-space custom geometry: converter annotates `.bufferSource()` / `ShapeRenderer` hits and scaffolds `LegacySubmitCustomGeometryHooks` — finish the port into `SubmitCustomGeometryEvent` + `submitShapeOutline` (do not keep immediate buffers)
 - Datapacks (biomes / dimension types often need 26.2 JSON shape)
 - GeckoLib assets under `assets/<mod>/geckolib/models|animations/` with bare resource IDs
 - Written books / dyed items (data components)

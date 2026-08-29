@@ -861,28 +861,52 @@ function Invoke-NeoForge26ApiRewritePass {
         $t = $t -replace '(\?\s*\(ServerLevel\)[^,]+?\s*:\s*null)\s*,\s*2\s*,',
             '$1, net.minecraft.server.permissions.LevelBasedPermissionSet.GAMEMASTER,'
 
-        # --- Client render package moves (common humanoid / glow layers) ---
-        $t = $t -replace 'import\s+net\.minecraft\.client\.renderer\.MultiBufferSource\s*;',
-            'import net.minecraft.client.renderer.SubmitNodeCollector;'
+        # --- Client render package moves ---
+        # Entity/layer MultiBufferSource -> SubmitNodeCollector is valid (glow overlays, armor layers).
+        # World-draw MultiBufferSource / .bufferSource() is NOT a rename: use SubmitCustomGeometryEvent
+        # + submitShapeOutline (see Invoke-SubmitCustomGeometryPass). Naive rename breaks world geometry.
+        $isWorldDraw = $t -match '\.bufferSource\s*\(|\bRenderLevelStageEvent\b|\bShapeRenderer\b|LevelRenderer\.renderLineBox|MultiBufferSource\.BufferSource'
+        $isEntitySubmit = $t -match 'extends\s+RenderLayer\b|RenderLayer\s*<|LivingEntityRenderer|EntityRenderer\s*<|HumanoidArmorLayer|GeoEntityRenderer|GeoRenderer'
+
         $t = $t -replace 'import\s+net\.minecraft\.client\.renderer\.RenderType\s*;',
             'import net.minecraft.client.renderer.rendertype.RenderTypes;'
         # Only rewrite classic RenderType static factories; leave other RenderType mentions.
-        $t = $t -replace '\bRenderType\.(eyes|entityCutout|entityCutoutNoCull|entityTranslucent|entityTranslucentEmissive)\b', 'RenderTypes.$1'
-        $t = $t -replace '\bMultiBufferSource\b', 'SubmitNodeCollector'
-        # Armor layer: dual bakeLayer(INNER/OUTER) -> ArmorModelSet.bake (do NOT rename INNER/OUTER tokens;
-        # PLAYER_ARMOR is ArmorModelSet, not a ModelLayerLocation, so bakeLayer(PLAYER_ARMOR) does not compile).
-        $t = [regex]::Replace($t,
-            'new\s+HumanoidArmorLayer(?:<>)?\s*\(\s*this\s*,\s*new\s+HumanoidModel(?:<>)?\s*\(\s*context\.bakeLayer\(\s*ModelLayers\.PLAYER_INNER_ARMOR\s*\)\s*\)\s*,\s*new\s+HumanoidModel(?:<>)?\s*\(\s*context\.bakeLayer\(\s*ModelLayers\.PLAYER_OUTER_ARMOR\s*\)\s*\)\s*,\s*context\.getEquipmentRenderer\(\)\s*\)',
-            'new HumanoidArmorLayer(this, net.minecraft.client.renderer.entity.ArmorModelSet.bake(ModelLayers.PLAYER_ARMOR, context.getModelSet(), HumanoidModel::new), context.getEquipmentRenderer())',
-            [System.Text.RegularExpressions.RegexOptions]::Singleline)
-        # MCreator glow overlay: RenderLayer.render(PoseStack, SubmitNodeCollector, ...) is submit in 26.2
-        $t = [regex]::Replace($t,
-            'public\s+void\s+render\s*\(\s*PoseStack\s+(\w+)\s*,\s*SubmitNodeCollector\s+',
-            'public void submit(PoseStack $1, SubmitNodeCollector ')
-        # getBuffer(eyes)+renderToBuffer (plain or inside if) -> submitModel
-        $t = [regex]::Replace($t,
-            'VertexConsumer\s+\w+\s*=\s*(\w+)\.getBuffer\(\s*RenderTypes\.eyes\(([^;]+?)\)\s*\)\s*;\s*(?:\(\(HumanoidModel\)this\.getParentModel\(\)\)|this\.getParentModel\(\))\s*\.renderToBuffer\(\s*(\w+)\s*,\s*\w+\s*,\s*(\w+)\s*,\s*LivingEntityRenderer\.getOverlayCoords\((\w+)\s*,\s*[^)]+\)\s*\)\s*;',
-            '$1.order(0).submitModel(this.getParentModel(), $5, $3, RenderTypes.eyes($2), $4, LivingEntityRenderer.getOverlayCoords($5, 0.0F), -1, null, $5.outlineColor, null);')
+        $t = $t -replace '\bRenderType\.(eyes|entityCutout|entityCutoutNoCull|entityTranslucent|entityTranslucentEmissive|lines)\b', 'RenderTypes.$1'
+
+        if ($isEntitySubmit -or (-not $isWorldDraw -and $t -match '\bMultiBufferSource\b')) {
+            $t = $t -replace 'import\s+net\.minecraft\.client\.renderer\.MultiBufferSource\s*;',
+                'import net.minecraft.client.renderer.SubmitNodeCollector;'
+            $t = $t -replace '\bMultiBufferSource\b', 'SubmitNodeCollector'
+            # Armor layer: dual bakeLayer(INNER/OUTER) -> ArmorModelSet.bake (do NOT rename INNER/OUTER tokens;
+            # PLAYER_ARMOR is ArmorModelSet, not a ModelLayerLocation, so bakeLayer(PLAYER_ARMOR) does not compile).
+            $t = [regex]::Replace($t,
+                'new\s+HumanoidArmorLayer(?:<>)?\s*\(\s*this\s*,\s*new\s+HumanoidModel(?:<>)?\s*\(\s*context\.bakeLayer\(\s*ModelLayers\.PLAYER_INNER_ARMOR\s*\)\s*\)\s*,\s*new\s+HumanoidModel(?:<>)?\s*\(\s*context\.bakeLayer\(\s*ModelLayers\.PLAYER_OUTER_ARMOR\s*\)\s*\)\s*,\s*context\.getEquipmentRenderer\(\)\s*\)',
+                'new HumanoidArmorLayer(this, net.minecraft.client.renderer.entity.ArmorModelSet.bake(ModelLayers.PLAYER_ARMOR, context.getModelSet(), HumanoidModel::new), context.getEquipmentRenderer())',
+                [System.Text.RegularExpressions.RegexOptions]::Singleline)
+            # MCreator glow overlay: RenderLayer.render(PoseStack, SubmitNodeCollector, ...) is submit in 26.2
+            $t = [regex]::Replace($t,
+                'public\s+void\s+render\s*\(\s*PoseStack\s+(\w+)\s*,\s*SubmitNodeCollector\s+',
+                'public void submit(PoseStack $1, SubmitNodeCollector ')
+            # getBuffer(eyes)+renderToBuffer (plain or inside if) -> submitModel
+            $t = [regex]::Replace($t,
+                'VertexConsumer\s+\w+\s*=\s*(\w+)\.getBuffer\(\s*RenderTypes\.eyes\(([^;]+?)\)\s*\)\s*;\s*(?:\(\(HumanoidModel\)this\.getParentModel\(\)\)|this\.getParentModel\(\))\s*\.renderToBuffer\(\s*(\w+)\s*,\s*\w+\s*,\s*(\w+)\s*,\s*LivingEntityRenderer\.getOverlayCoords\((\w+)\s*,\s*[^)]+\)\s*\)\s*;',
+                '$1.order(0).submitModel(this.getParentModel(), $5, $3, RenderTypes.eyes($2), $4, LivingEntityRenderer.getOverlayCoords($5, 0.0F), -1, null, $5.outlineColor, null);')
+        }
+
+        if ($isWorldDraw) {
+            if ($t -notmatch 'TODO 26\.2: SubmitCustomGeometryEvent') {
+                $t = [regex]::Replace($t, '(?m)^(package\s+[^;]+;\s*)',
+                    "`$1`r`n// TODO 26.2: SubmitCustomGeometryEvent + submitShapeOutline (world MultiBufferSource/bufferSource removed)`r`n", 1)
+            }
+            # Mark dead immediate-buffer calls; geometry pass scaffolds the replacement event hook.
+            $t = [regex]::Replace($t, '(?m)^(\s*)(.*\.bufferSource\s*\([^;]*;)\s*$',
+                '$1// TODO 26.2 SubmitCustomGeometryEvent (was bufferSource): $2')
+            $t = [regex]::Replace($t, '(?m)^(\s*)(.*\bShapeRenderer\.[^;]*;)\s*$',
+                '$1// TODO 26.2 submitShapeOutline (was ShapeRenderer): $2')
+            $t = [regex]::Replace($t, '(?m)^(\s*)(.*LevelRenderer\.renderLineBox[^;]*;)\s*$',
+                '$1// TODO 26.2 submitShapeOutline (was LevelRenderer.renderLineBox): $2')
+        }
+
         # PlayerSkin.texture() -> body().texturePath()
         $t = $t -replace '\.getSkin\(\)\.texture\(\)', '.getSkin().body().texturePath()'
 
@@ -1855,6 +1879,119 @@ $gameLines
     return $filesTouched
 }
 
+function Invoke-SubmitCustomGeometryPass {
+    <#
+    .SYNOPSIS
+      Detect world-draw MultiBufferSource / bufferSource / ShapeRenderer leftovers and scaffold a
+      client SubmitCustomGeometryEvent + submitShapeOutline hook (NeoForge 26.2).
+
+      Entity-layer MultiBufferSource->SubmitNodeCollector renames stay in the API pass.
+      World geometry cannot be naively renamed; this pass documents hits and drops a working stub.
+    #>
+    param([string]$Root, [hashtable]$Meta)
+
+    $javaRoot = Join-Path $Root 'src\main\java'
+    if (-not (Test-Path $javaRoot)) {
+        return @{ touched = 0; hits = @(); scaffold = $false }
+    }
+
+    $hitFiles = New-Object System.Collections.Generic.List[string]
+    $touched = 0
+    $worldPattern = '\.bufferSource\s*\(|TODO 26\.2 SubmitCustomGeometryEvent|\bRenderLevelStageEvent\b|\bShapeRenderer\b|LevelRenderer\.renderLineBox|MultiBufferSource\.BufferSource|TODO 26\.2: SubmitCustomGeometryEvent'
+
+    foreach ($f in Get-ChildItem $javaRoot -Recurse -Filter '*.java' -File -ErrorAction SilentlyContinue) {
+        $t = [System.IO.File]::ReadAllText($f.FullName)
+        if ($t -notmatch $worldPattern) { continue }
+        # Skip entity-only submit layers that merely mention SubmitNodeCollector after rename
+        if ($t -match 'extends\s+RenderLayer\b|RenderLayer\s*<' -and $t -notmatch '\.bufferSource\s*\(|\bShapeRenderer\b|LevelRenderer\.renderLineBox|RenderLevelStageEvent|MultiBufferSource\.BufferSource') {
+            continue
+        }
+        $rel = $f.FullName.Substring($javaRoot.Length).TrimStart('\', '/')
+        $hitFiles.Add($rel.Replace('\', '/')) | Out-Null
+        $touched++
+    }
+
+    $scaffold = $false
+    if ($hitFiles.Count -gt 0) {
+        $pkg = $Meta.mod_group
+        if (-not $pkg) { $pkg = 'com.example' }
+        $modId = $Meta.mod_id
+        if (-not $modId) { $modId = 'examplemod' }
+        $dir = Join-Path $javaRoot ($pkg -replace '\.', [IO.Path]::DirectorySeparatorChar)
+        $clientDir = Join-Path $dir 'client'
+        New-Item -ItemType Directory -Path $clientDir -Force | Out-Null
+        $outFile = Join-Path $clientDir 'LegacySubmitCustomGeometryHooks.java'
+        if (-not (Test-Path -LiteralPath $outFile)) {
+            $scaffoldBody = @"
+package $pkg.client;
+
+import com.mojang.blaze3d.vertex.PoseStack;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.rendertype.RenderTypes;
+import net.minecraft.world.phys.shapes.Shapes;
+import net.minecraft.world.phys.shapes.VoxelShape;
+import net.neoforged.api.distmarker.Dist;
+import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.fml.common.EventBusSubscriber;
+import net.neoforged.neoforge.client.event.SubmitCustomGeometryEvent;
+
+/**
+ * Auto-generated by Convert-Forge1201-ToNeoForge262 (v1.4.1+).
+ *
+ * World-space immediate buffers (MultiBufferSource / RenderBuffers.bufferSource /
+ * ShapeRenderer / LevelRenderer.renderLineBox) are gone in Minecraft 26.2.
+ * Submit custom outlines/geometry here via SubmitNodeCollector#submitShapeOutline.
+ *
+ * Evidence: NeoForge SubmitCustomGeometryEvent + BlockEntityRenderBoundsDebugRenderer.
+ * Move extraction of per-frame state into ExtractLevelRenderStateEvent when needed.
+ */
+@EventBusSubscriber(value = Dist.CLIENT, modid = "$modId")
+public final class LegacySubmitCustomGeometryHooks {
+    private LegacySubmitCustomGeometryHooks() {}
+
+    @SubscribeEvent
+    public static void onSubmitCustomGeometry(SubmitCustomGeometryEvent event) {
+        // Example outline at the camera-relative origin of each non-empty section.
+        // Replace with your former bufferSource / ShapeRenderer drawing.
+        PoseStack poseStack = event.getPoseStack();
+        var camera = event.getLevelRenderState().cameraRenderState.pos;
+        float lineWidth = Minecraft.getInstance().gameRenderer.gameRenderState().windowRenderState.appropriateLineWidth;
+        VoxelShape unit = Shapes.block();
+
+        event.getRenderableSections().forEach(section -> {
+            if (section.isEmpty()) {
+                return;
+            }
+            poseStack.pushPose();
+            poseStack.translate(
+                    section.getRenderOrigin().getX() - camera.x,
+                    section.getRenderOrigin().getY() - camera.y,
+                    section.getRenderOrigin().getZ() - camera.z);
+            // Disabled by default — enable after porting your draw logic.
+            if (false) {
+                event.getSubmitNodeCollector().submitShapeOutline(
+                        poseStack, unit, RenderTypes.lines(), 0xFFFF0000, lineWidth, false);
+            }
+            poseStack.popPose();
+        });
+    }
+}
+"@
+            [System.IO.File]::WriteAllText($outFile, $scaffoldBody.Trim() + "`r`n")
+            $scaffold = $true
+            $touched++
+            $relScaffold = $outFile.Substring($javaRoot.Length).TrimStart('\', '/').Replace('\', '/')
+            $hitFiles.Add($relScaffold) | Out-Null
+        }
+    }
+
+    return @{
+        touched  = $touched
+        hits     = @($hitFiles | Select-Object -Unique)
+        scaffold = $scaffold
+    }
+}
+
 function Restore-ModAssets {
     <#
     .SYNOPSIS
@@ -2106,6 +2243,13 @@ Write-Step 'NeoForge/Minecraft 26.2 API pass (NBT, nav, teleport, weather, color
 $api = Invoke-NeoForge26ApiRewritePass -Root $OutputPath
 Write-Ok "API-touched $api Java file(s)"
 
+Write-Step 'SubmitCustomGeometryEvent scaffold (world MultiBufferSource / bufferSource / ShapeRenderer)'
+$geom = Invoke-SubmitCustomGeometryPass -Root $OutputPath -Meta $meta
+Write-Ok ("Geometry-pass units: {0}; scaffold written: {1}" -f $geom.touched, $geom.scaffold)
+if ($geom.hits.Count -gt 0) {
+    Write-Info ("World-draw hits ({0}): {1}" -f $geom.hits.Count, (($geom.hits | Select-Object -First 8) -join ', '))
+}
+
 Write-Step 'MCreator / NeoForge 1.21.x -> 26.2 pass (blocks GUI menus fluid overlay)'
 $m121 = Invoke-Mcreator1218ToNeoForge262Pass -Root $OutputPath
 Write-Ok "1.21.x-touched $m121 Java file(s)"
@@ -2176,26 +2320,35 @@ $report = @"
    weather/clock stubs, cross-dim teleport signature, Camera.position, ClipContext CollisionContext,
    displayClientMessage->sendSystemMessage, RespawnConfig.respawnData, getSpawnPos, CommandSourceStack PermissionSet,
    FMLEnvironment.getDist(), registerItem/SpawnEggItem, client RenderTypes/SubmitNodeCollector/ArmorModelSet
-9. **MCreator / NeoForge 1.21.x pass** (MOAdecor BATH): drop ``shouldDisplayFluidOverlay`` / ``BlockAndTintGetter``,
+9. **SubmitCustomGeometry pass**: entity/layer ``MultiBufferSource`` still renames to ``SubmitNodeCollector``;
+   world-draw ``.bufferSource()`` / ``ShapeRenderer`` / ``renderLineBox`` are annotated (not naively renamed)
+   and ``client/LegacySubmitCustomGeometryHooks.java`` is scaffolded with ``SubmitCustomGeometryEvent`` + ``submitShapeOutline``
+10. **MCreator / NeoForge 1.21.x pass** (MOAdecor BATH): drop ``shouldDisplayFluidOverlay`` / ``BlockAndTintGetter``,
    ``noCollission``->``noCollision``, ``GuiGraphics``->``GuiGraphicsExtractor``, container ``renderBg``->``extractBackground``,
    final ``imageWidth``/``imageHeight`` via ``super(..., w, h)``, ``keyPressed(KeyEvent)``, ``isClientSide()``,
    remove ``Tuple`` work-queue, stub broken ``ItemHandler.ITEM/ENTITY`` capability binds
-10. **ModConfigSpec order pass** (define-before-build) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â prevents world-join disconnect from decompiled MCreator configs
-11. Registry templates (createEntities / Registries.SOUND_EVENT / createItems / createBlocks)
-12. ``@Mod`` constructor injection template (IEventBus + ModContainer)
-13. ``@Mod.EventBusSubscriber`` -> ``LegacyEventBootstrap`` + ``addListener`` registrations
-14. Entity level accessors (safe ``this.level()`` only), getCenter, setMaxUpStep comment-out
-15. pack.mcmeta format 107 + **templates/** neoforge.mods.toml (removes leftover resources META-INF toml that pins old MC versions)
-16. Client item stubs where models/item existed
+11. **ModConfigSpec order pass** (define-before-build) — prevents world-join disconnect from decompiled MCreator configs
+12. Registry templates (createEntities / Registries.SOUND_EVENT / createItems / createBlocks)
+13. ``@Mod`` constructor injection template (IEventBus + ModContainer)
+14. ``@Mod.EventBusSubscriber`` -> ``LegacyEventBootstrap`` + ``addListener`` registrations
+15. Entity level accessors (safe ``this.level()`` only), getCenter, setMaxUpStep comment-out
+16. pack.mcmeta format 107 + **templates/** neoforge.mods.toml (removes leftover resources META-INF toml that pins old MC versions)
+17. Client item stubs where models/item existed
+
+## World-draw geometry hits
+
+$(if ($geom.hits.Count) { ($geom.hits | ForEach-Object { "- ``$_``" }) -join "`n" } else { '- (none detected)' })
+- Scaffold written: $($geom.scaffold)
 
 ## Important
 
 - Conversion success means a **scaffold** was written. It does **not** mean the mod is loadable yet.
 - Only install jars produced by ``gradlew build`` from this output (``build/libs/*.jar``).
-- Never rename the input 1.20.1 / 1.21.x jar and treat it as a 26.2 mod ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â NeoForge will reject old ``versionRange`` pins.
+- Never rename the input 1.20.1 / 1.21.x jar and treat it as a 26.2 mod — NeoForge will reject old ``versionRange`` pins.
 
 ## What you must still fix manually
 
+- Port former world ``bufferSource`` / ``ShapeRenderer`` bodies into ``LegacySubmitCustomGeometryHooks`` (enable the ``if (false)`` example)
 - GeckoLib 5 render/model method signatures (GeoRenderState) and remaining client ``submit`` layer bodies
 - SmartBrainLib 1.x -> 2.x API if used
 - Written books / dyed items (DataComponents) if used heavily

@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.4.1 — 2026-08-29
+
+### SubmitCustomGeometry / world MultiBufferSource
+- **Stop** naive world-draw `MultiBufferSource` → `SubmitNodeCollector` renames (they break `.bufferSource()` / `ShapeRenderer` / `renderLineBox` ports).
+- Entity/layer path unchanged: `MultiBufferSource` → `SubmitNodeCollector`, `render` → `submit`, glow `submitModel`, armor `ArmorModelSet`.
+- World-draw hits are annotated with `TODO 26.2: SubmitCustomGeometryEvent + submitShapeOutline`.
+- New pass writes `client/LegacySubmitCustomGeometryHooks.java` (`@SubscribeEvent` on `SubmitCustomGeometryEvent`, example `submitShapeOutline`).
+- Migration report lists world-draw hit files.
+
+Evidence: NeoForge 26.2 `SubmitCustomGeometryEvent`, `BlockEntityRenderBoundsDebugRenderer`, primer `OrderedSubmitNodeCollector#submitShapeOutline`.
+
+### Packaging
+- GUI / Setup / portable package **1.4.1**
+
 ## 1.4.0 — 2026-08-23
 
 Final 26.2 converter from the Knocker + The One Who Watches (TOWW) campaign.

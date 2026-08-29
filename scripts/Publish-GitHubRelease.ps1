@@ -3,13 +3,13 @@
   Create/update a GitHub Release and upload portable + setup artifacts from dist/.
 
 .EXAMPLE
-  .\scripts\Publish-GitHubRelease.ps1 -Tag v1.2.6
+  .\scripts\Publish-GitHubRelease.ps1 -Tag v1.4.1
 #>
 [CmdletBinding()]
 param(
-    [string]$Tag = 'v1.2.6',
+    [string]$Tag = 'v1.4.1',
     [string]$Repo = 'RobbieB1980/LegacyJavaConverter',
-    [string]$Name = 'RB Legacy Java Converter 1.2.6'
+    [string]$Name = 'RB Legacy Java Converter 1.4.1'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -68,16 +68,17 @@ Experimental converter: **Forge 1.20.1** / decompiled **NeoForge 1.21.x (MCreato
 | ``RB-Legacy-Java-Converter-Setup.exe`` | Windows installer (self-contained; embeds portable toolset) |
 | ``RB-Legacy-Java-Converter-Portable.zip`` | No install - extract and run ``Start-Converter.bat`` or the EXE |
 
-### What's new in 1.2.6
+### What's new in 1.4.1
 
-- **Critical:** networking rewrite that was supposed to land in 1.2.5 **now actually matches** MCreator ``MESSAGES.forEach`` lines
-- Injects typed ``registerOne`` + direct ``MenuStateUpdateMessage`` 4-arg registration
-- Strips late ``FMLCommonSetupEvent`` payload registration from menu messages
-- Retest: **MOAdecor BATH** reconverts and builds clean (jar produced; report = deprecation warnings only)
+- **SubmitCustomGeometry pass:** stop naive world-draw ``MultiBufferSource`` → ``SubmitNodeCollector`` renames
+- Entity/layer path unchanged (``submit`` / glow / armor)
+- World ``.bufferSource()`` / ``ShapeRenderer`` / ``renderLineBox`` annotated with TODO 26.2
+- Scaffolds ``client/LegacySubmitCustomGeometryHooks.java`` using ``SubmitCustomGeometryEvent`` + ``submitShapeOutline``
+- Migration report lists world-draw hit files
 
-### Includes earlier 1.21.x → 26.2 work
+### Includes 1.4.0
 
-- 1.2.3–1.2.5: block/GUI rewrites, safer ``registerItem``, payload codec fixes, ELECTRONICS/GARDEN lessons
+- Knocker + The One Who Watches campaign: jar asset restore, SRG map, DeferredRegister id/spawn-egg, GeckoLib 5 fixes
 
 ### Requirements
 
