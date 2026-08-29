@@ -5,6 +5,7 @@ The converter targets NeoForge 26.2 and selects its migration passes from detect
 | Source | Detection | Conversion route |
 |---|---|---|
 | Forge 1.20.1 | Supported | Forge/SRG, registry, event, MCreator and cumulative 26.2 migrations |
+| Forge 1.20.2–1.20.4 | Supported | Patch-routed Forge, registry, event, MCreator and cumulative 26.2 migrations; skips the 1.20.1-only SRG map |
 | NeoForge 1.21.x | Supported | 1.21-era, MCreator and cumulative 26.2 migrations |
 | NeoForge 22.x–25.x | Supported | Feature-driven cumulative 26.2 migrations |
 | NeoForge 26.0–26.1 | Supported | Direct 26.2 delta |

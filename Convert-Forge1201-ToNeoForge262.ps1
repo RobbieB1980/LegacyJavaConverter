@@ -444,9 +444,15 @@ function Get-Srg1201Map {
 }
 
 function Invoke-MechanicalJavaRewrites {
-    param([string]$Root)
+    param(
+        [string]$Root,
+        [AllowEmptyString()][string]$ModId = ''
+    )
 
     $srgMap = Get-Srg1201Map
+    $compatPkg = Get-Legacy262CompatPackage -ModId $ModId
+    $compatFqcn = "$compatPkg.Legacy262Compat"
+    $compatRel = ($compatPkg -replace '\.', '\') + '\Legacy262Compat.java'
     $srgEval = {
         param($m)
         $k = $m.Value
@@ -553,7 +559,7 @@ function Invoke-MechanicalJavaRewrites {
         # IMPORTANT: never rewrite package paths like net.minecraft.world.level.Level
         # Only rewrite Entity field access: this.level / entity.level
         $t = Convert-LevelClientSideAccess $t
-        $t = Convert-NeoForge262ApiMoves $t
+        $t = Convert-NeoForge262ApiMoves -Text $t -ModId $ModId
         $t = $t -replace '(?m)^\s*import\s+net\.minecraft\.client\.renderer\.ItemBlockRenderTypes;\s*\r?\n', ''
         $t = $t -replace '(?m)^\s*ItemBlockRenderTypes\.setRenderLayer\([^;]+;\s*\r?\n', ''
         # setMaxUpStep removed - comment out whole statement line-ish
@@ -798,13 +804,36 @@ function Invoke-MechanicalJavaRewrites {
         }
     }
 
-    $needsCompat = Get-ChildItem (Join-Path $Root 'src\main\java') -Recurse -File -Filter '*.java' -ErrorAction SilentlyContinue |
-        Select-String -SimpleMatch 'rb.legacy.converter.compat.Legacy262Compat' -Quiet
+    # JPMS: Legacy262Compat must live under a mod-scoped package. Shared
+    # rb.legacy.converter.compat collides when two converted mods load together.
+    $javaRoot = Join-Path $Root 'src\main\java'
+    $legacySharedCompat = Join-Path $javaRoot 'rb\legacy\converter\compat\Legacy262Compat.java'
+    if (Test-Path -LiteralPath $legacySharedCompat) {
+        Remove-Item -LiteralPath $legacySharedCompat -Force -ErrorAction SilentlyContinue
+    }
+
+    $needsCompat = Get-ChildItem -LiteralPath $javaRoot -Recurse -File -Filter '*.java' -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -notmatch '[\\/]rb[\\/]legacy[\\/]converter[\\/]compat[\\/]' } |
+        Select-String -SimpleMatch $compatFqcn -Quiet
+    if (-not $needsCompat) {
+        # Also detect leftover shared FQCN from older converter runs.
+        $needsCompat = Get-ChildItem -LiteralPath $javaRoot -Recurse -File -Filter '*.java' -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -notmatch '[\\/]rb[\\/]legacy[\\/]converter[\\/]compat[\\/]' } |
+            Select-String -SimpleMatch 'rb.legacy.converter.compat.Legacy262Compat' -Quiet
+    }
     if ($needsCompat) {
-        $compatPath = Join-Path $Root 'src\main\java\rb\legacy\converter\compat\Legacy262Compat.java'
+        # Ensure call sites use the mod-scoped FQCN (idempotent rewrites).
+        foreach ($cf in @(Get-ChildItem -LiteralPath $javaRoot -Recurse -File -Filter '*.java' -ErrorAction SilentlyContinue |
+                Where-Object { $_.FullName -notmatch '[\\/]rb[\\/]legacy[\\/]converter[\\/]compat[\\/]' })) {
+            $ct = [IO.File]::ReadAllText($cf.FullName)
+            $co = $ct
+            $ct = $ct.Replace('rb.legacy.converter.compat.Legacy262Compat', $compatFqcn)
+            if ($ct -ne $co) { [IO.File]::WriteAllText($cf.FullName, $ct); $touched++ }
+        }
+        $compatPath = Join-Path $javaRoot $compatRel
         [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($compatPath)) | Out-Null
-        $compat = @'
-package rb.legacy.converter.compat;
+        $compat = @"
+package $compatPkg;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -814,7 +843,7 @@ import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.Property;
 
-/** Mechanical bridge for APIs removed between Minecraft 1.21.x and 26.2. */
+/** Mechanical bridge for APIs removed between Minecraft 1.21.x and 26.2. Mod-scoped to avoid JPMS split packages. */
 public final class Legacy262Compat {
     private Legacy262Compat() {}
 
@@ -836,27 +865,163 @@ public final class Legacy262Compat {
     }
 }
 
-'@
+"@
         [IO.File]::WriteAllText($compatPath, $compat)
     }
     return $touched
 }
 
 function Invoke-ExactPrimerMigrationRules {
+    <#
+    .SYNOPSIS
+      Applies mechanical transforms for primer rule IDs selected STRICTLY after the detected source.
+      Rule IDs come from PrimerChangeIndex via Get-PrimerMigrationRules (to > source only).
+    #>
     param([string]$Root, $Profile, [string]$ModId)
 
     $rules = @(Get-PrimerMigrationRules -SourceVersion ([string]$Profile.SourceVersion))
     $touched = 0
     $javaRoot = Join-Path $Root 'src\main\java'
+    $nl = [Environment]::NewLine
 
     foreach ($file in @(Get-ChildItem -LiteralPath $javaRoot -Recurse -File -Filter '*.java' -ErrorAction SilentlyContinue)) {
         $text = [IO.File]::ReadAllText($file.FullName)
         $original = $text
+
         if ($rules -contains 'legacy-direction-property') {
             $text = $text.Replace('import net.minecraft.world.level.block.state.properties.DirectionProperty;', 'import net.minecraft.world.level.block.state.properties.EnumProperty;')
             $text = $text.Replace('DirectionProperty', 'EnumProperty<Direction>')
             $text = $text.Replace('.getNormal()', '.getUnitVec3i()')
         }
+
+        # 1.21.5: ArmorItem/SwordItem removed -> Item + Properties.humanoidArmor / Properties.sword
+        if ($rules -contains 'armor-tool-item-components') {
+            if ($text -match 'extends\s+ArmorItem\b') {
+                $text = $text -replace 'import\s+net\.minecraft\.world\.item\.ArmorItem;\r?\n', ''
+                $text = $text -replace 'extends\s+ArmorItem\b', 'extends Item'
+                if ($text -notmatch 'import\s+net\.minecraft\.world\.item\.Item;') {
+                    $text = [regex]::Replace($text, '(?m)^(package\s+[^;]+;\s*)', "`$1${nl}import net.minecraft.world.item.Item;${nl}", 1)
+                }
+                $text = $text -replace 'super\(\s*ARMOR_MATERIAL\s*,\s*type\s*,\s*properties\s*\)', 'super(properties.humanoidArmor(ARMOR_MATERIAL, type))'
+            }
+            if ($text -match 'extends\s+SwordItem\b') {
+                $text = $text -replace 'import\s+net\.minecraft\.world\.item\.SwordItem;\r?\n', ''
+                $text = $text -replace 'extends\s+SwordItem\b', 'extends Item'
+                if ($text -notmatch 'import\s+net\.minecraft\.world\.item\.Item;') {
+                    $text = [regex]::Replace($text, '(?m)^(package\s+[^;]+;\s*)', "`$1${nl}import net.minecraft.world.item.Item;${nl}", 1)
+                }
+                $text = $text -replace 'super\(\s*TOOL_MATERIAL\s*,\s*([0-9.F]+)\s*,\s*([-0-9.F]+)\s*,\s*properties\s*\)', 'super(properties.sword(TOOL_MATERIAL, $1, $2))'
+            }
+            # Block.appendHoverText removed in later 1.21.x; drop MCreator block tooltip overrides
+            if ($text -match 'extends\s+\w*Block\b' -and $text -match 'void\s+appendHoverText\s*\(') {
+                $text = [regex]::Replace($text,
+                    '(?s)(?:@OnlyIn\s*\(\s*Dist\.CLIENT\s*\)\s*)?public\s+void\s+appendHoverText\s*\(\s*ItemStack\s+\w+\s*,\s*TooltipContext\s+\w+\s*,\s*List<\s*Component\s*>\s+\w+\s*,\s*TooltipFlag\s+\w+\s*\)\s*\{(?:[^{}]|\{[^{}]*\})*\}',
+                    '/* appendHoverText removed: Block tooltips moved off Block in post-1.21.4 primers */')
+            }
+        }
+
+        if ($rules -contains 'removed-block-lifecycle') {
+            $text = $text -replace '\.hasPostProcess\s*\(', '.emissiveRendering('
+            # 26.2 emissiveRendering takes Predicate<BlockState>, not the old 3-arg form
+            $text = [regex]::Replace($text, '\.emissiveRendering\s*\(\s*\(\s*(\w+)\s*,\s*\w+\s*,\s*\w+\s*\)\s*->', '.emissiveRendering(($1) ->')
+            $text = [regex]::Replace($text,
+                'public\s+void\s+onRemove\s*\(\s*BlockState\s+(\w+)\s*,\s*Level\s+(\w+)\s*,\s*BlockPos\s+(\w+)\s*,\s*BlockState\s+\w+\s*,\s*boolean\s+(\w+)\s*\)',
+                'protected void affectNeighborsAfterRemoval(BlockState $1, ServerLevel $2, BlockPos $3, boolean $4)')
+            $text = [regex]::Replace($text,
+                'super\.onRemove\s*\(\s*(\w+)\s*,\s*(\w+)\s*,\s*(\w+)\s*,\s*\w+\s*,\s*(\w+)\s*\)',
+                'super.affectNeighborsAfterRemoval($1, $2, $3, $4)')
+            $text = $text -replace 'if\s*\(\s*(\w+)\.getBlock\(\)\s*!=\s*newState\.getBlock\(\)\s*\)', 'if (true /* was state.getBlock() != newState.getBlock(); newState removed in affectNeighborsAfterRemoval */)'
+
+            $text = [regex]::Replace($text,
+                'public\s+void\s+entityInside\s*\(\s*BlockState\s+(\w+)\s*,\s*Level\s+(\w+)\s*,\s*BlockPos\s+(\w+)\s*,\s*Entity\s+(\w+)\s*\)',
+                'public void entityInside(BlockState $1, Level $2, BlockPos $3, Entity $4, net.minecraft.world.entity.InsideBlockEffectApplier effectApplier, boolean isPrecise)')
+            $text = [regex]::Replace($text,
+                'super\.entityInside\s*\(\s*(\w+)\s*,\s*(\w+)\s*,\s*(\w+)\s*,\s*(\w+)\s*\)',
+                'super.entityInside($1, $2, $3, $4, effectApplier, isPrecise)')
+
+            $text = [regex]::Replace($text,
+                'public\s+boolean\s+onDestroyedByPlayer\s*\(\s*BlockState\s+(\w+)\s*,\s*Level\s+(\w+)\s*,\s*BlockPos\s+(\w+)\s*,\s*Player\s+(\w+)\s*,\s*boolean\s+(\w+)\s*,\s*FluidState\s+(\w+)\s*\)',
+                'public boolean onDestroyedByPlayer(BlockState $1, Level $2, BlockPos $3, Player $4, ItemStack toolStack, boolean $5, FluidState $6)')
+            $text = [regex]::Replace($text,
+                'super\.onDestroyedByPlayer\s*\(\s*(\w+)\s*,\s*(\w+)\s*,\s*(\w+)\s*,\s*(\w+)\s*,\s*(\w+)\s*,\s*(\w+)\s*\)',
+                'super.onDestroyedByPlayer($1, $2, $3, $4, toolStack, $5, $6)')
+            if ($text -match 'onDestroyedByPlayer\s*\(' -and $text -notmatch 'import\s+net\.minecraft\.world\.item\.ItemStack;') {
+                $text = [regex]::Replace($text, '(?m)^(package\s+[^;]+;\s*)', "`$1${nl}import net.minecraft.world.item.ItemStack;${nl}", 1)
+            }
+            if ($text -match 'affectNeighborsAfterRemoval\s*\(' -and $text -notmatch 'import\s+net\.minecraft\.server\.level\.ServerLevel;') {
+                $text = [regex]::Replace($text, '(?m)^(package\s+[^;]+;\s*)', "`$1${nl}import net.minecraft.server.level.ServerLevel;${nl}", 1)
+            }
+        }
+
+        if ($rules -contains 'block-entity-value-io') {
+            if ($text -match 'void\s+loadAdditional\s*\(\s*CompoundTag\b' -or $text -match 'void\s+saveAdditional\s*\(\s*CompoundTag\b') {
+                $text = $text -replace 'import\s+net\.minecraft\.core\.HolderLookup\.Provider;', ("import net.minecraft.world.level.storage.ValueInput;" + $nl + "import net.minecraft.world.level.storage.ValueOutput;")
+                if ($text -notmatch 'import\s+net\.minecraft\.world\.level\.storage\.ValueInput;') {
+                    $text = [regex]::Replace($text, '(?m)^(package\s+[^;]+;\s*)', "`$1${nl}import net.minecraft.world.level.storage.ValueInput;${nl}import net.minecraft.world.level.storage.ValueOutput;${nl}", 1)
+                }
+                $text = [regex]::Replace($text,
+                    'public\s+void\s+loadAdditional\s*\(\s*CompoundTag\s+(\w+)\s*,\s*(?:Provider|HolderLookup\.Provider)\s+\w+\s*\)',
+                    'protected void loadAdditional(ValueInput $1)')
+                $text = [regex]::Replace($text,
+                    'public\s+void\s+saveAdditional\s*\(\s*CompoundTag\s+(\w+)\s*,\s*(?:Provider|HolderLookup\.Provider)\s+\w+\s*\)',
+                    'protected void saveAdditional(ValueOutput $1)')
+                $text = $text -replace 'super\.loadAdditional\s*\(\s*(\w+)\s*,\s*\w+\s*\)', 'super.loadAdditional($1)'
+                $text = $text -replace 'super\.saveAdditional\s*\(\s*(\w+)\s*,\s*\w+\s*\)', 'super.saveAdditional($1)'
+                $text = $text -replace 'ContainerHelper\.loadAllItems\s*\(\s*([^,]+)\s*,\s*([^,]+)\s*,\s*\w+\s*\)', 'ContainerHelper.loadAllItems($1, $2)'
+                $text = $text -replace 'ContainerHelper\.saveAllItems\s*\(\s*([^,]+)\s*,\s*([^,]+)\s*,\s*\w+\s*\)', 'ContainerHelper.saveAllItems($1, $2)'
+                $text = $text -replace 'tryLoadLootTable\s*\(\s*(\w+)\s*\)', 'tryLoadLootTable($1)'
+                $text = $text -replace 'trySaveLootTable\s*\(\s*(\w+)\s*\)', 'trySaveLootTable($1)'
+                # getUpdateTag still uses HolderLookup.Provider in 26.2; restore import if stripped
+                if ($text -match 'getUpdateTag\s*\(\s*Provider\b' -and $text -notmatch 'import\s+net\.minecraft\.core\.HolderLookup\.Provider;') {
+                    $text = [regex]::Replace($text, '(?m)^(package\s+[^;]+;\s*)', "`$1${nl}import net.minecraft.core.HolderLookup.Provider;${nl}", 1)
+                }
+            }
+        }
+
+        if ($rules -contains 'texture-sheet-to-single-quad') {
+            if ($text -match 'TextureSheetParticle') {
+                $text = $text.Replace('import net.minecraft.client.particle.TextureSheetParticle;', "import net.minecraft.client.particle.SingleQuadParticle;${nl}import net.minecraft.util.RandomSource;")
+                $text = $text.Replace('extends TextureSheetParticle', 'extends SingleQuadParticle')
+                $text = $text -replace 'super\(\s*world\s*,\s*x\s*,\s*y\s*,\s*z\s*\)\s*;', 'super(world, x, y, z, spriteSet.first());'
+                $text = $text -replace '\s*this\.pickSprite\s*\(\s*spriteSet\s*\)\s*;', ''
+                $text = [regex]::Replace($text,
+                    'public\s+ParticleRenderType\s+getRenderType\s*\(\s*\)\s*\{\s*return\s+ParticleRenderType\.PARTICLE_SHEET_TRANSLUCENT\s*;\s*\}',
+                    "public SingleQuadParticle.Layer getLayer() {${nl}      return SingleQuadParticle.Layer.TRANSLUCENT;${nl}   }")
+                $text = [regex]::Replace($text,
+                    'public\s+ParticleRenderType\s+getRenderType\s*\(\s*\)\s*\{\s*return\s+ParticleRenderType\.PARTICLE_SHEET_OPAQUE\s*;\s*\}',
+                    "public SingleQuadParticle.Layer getLayer() {${nl}      return SingleQuadParticle.Layer.OPAQUE;${nl}   }")
+                if ($text -notmatch 'ParticleRenderType\.') {
+                    $text = $text -replace 'import\s+net\.minecraft\.client\.particle\.ParticleRenderType;\r?\n', ''
+                }
+                $text = $text -replace 'public\s+Particle\s+createParticle\s*\(\s*SimpleParticleType\s+(\w+)\s*,\s*ClientLevel\s+(\w+)\s*,\s*double\s+(\w+)\s*,\s*double\s+(\w+)\s*,\s*double\s+(\w+)\s*,\s*double\s+(\w+)\s*,\s*double\s+(\w+)\s*,\s*double\s+(\w+)\s*\)',
+                    'public Particle createParticle(SimpleParticleType $1, ClientLevel $2, double $3, double $4, double $5, double $6, double $7, double $8, RandomSource random)'
+            }
+        }
+
+        if ($rules -contains 'game-rules-rewrite') {
+            $text = $text.Replace('import net.minecraft.world.level.GameRules;', 'import net.minecraft.world.level.gamerules.GameRules;')
+            $text = $text.Replace('GameRules.RULE_DOBLOCKDROPS', 'GameRules.BLOCK_DROPS')
+            $text = $text.Replace('GameRules.RULE_DOMOBLOOT', 'GameRules.MOB_DROPS')
+            $text = $text.Replace('GameRules.RULE_DOENTITYDROPS', 'GameRules.ENTITY_DROPS')
+            $text = $text.Replace('GameRules.RULE_KEEPINVENTORY', 'GameRules.KEEP_INVENTORY')
+            $text = $text.Replace('GameRules.RULE_MOBGRIEFING', 'GameRules.MOB_GRIEFING')
+            $text = $text.Replace('GameRules.RULE_DAYLIGHT', 'GameRules.ADVANCE_TIME')
+            $text = $text.Replace('GameRules.RULE_WEATHER_CYCLE', 'GameRules.ADVANCE_WEATHER')
+            $text = $text.Replace('GameRules.RULE_DOFIRETICK', 'GameRules.FIRE_SPREAD_RADIUS_AROUND_PLAYER')
+            $text = $text -replace 'getGameRules\(\)\.getBoolean\s*\(', 'getGameRules().get('
+        }
+
+        if ($rules -contains 'tristate-minecraft-util') {
+            $text = $text.Replace('import net.neoforged.neoforge.common.util.TriState;', 'import net.minecraft.util.TriState;')
+        }
+
+        if ($rules -contains 'projectile-arrow-package') {
+            $text = $text.Replace('import net.minecraft.world.entity.projectile.Arrow;', 'import net.minecraft.world.entity.projectile.arrow.Arrow;')
+            $text = $text.Replace('import net.minecraft.world.entity.projectile.SpectralArrow;', 'import net.minecraft.world.entity.projectile.arrow.SpectralArrow;')
+            $text = $text.Replace('import net.minecraft.world.entity.projectile.ThrownTrident;', 'import net.minecraft.world.entity.projectile.arrow.ThrownTrident;')
+            $text = $text.Replace('import net.minecraft.world.entity.projectile.AbstractArrow;', 'import net.minecraft.world.entity.projectile.arrow.AbstractArrow;')
+        }
+
         if ($text -ne $original) {
             [IO.File]::WriteAllText($file.FullName, $text)
             $touched++
@@ -877,8 +1042,6 @@ function Invoke-ExactPrimerMigrationRules {
         }
     }
 
-    # Semantic overlays are applied later (after all rewrite passes) so mechanical/API
-    # renames cannot mangle solved-case files (e.g. BlockEntityType -> EntityType.Builder).
     return [pscustomobject]@{ Touched=$touched; Rules=$rules; Overlays=@() }
 }
 
@@ -903,6 +1066,25 @@ function Invoke-NeoForge26ApiRewritePass {
         # Prefer OrEmpty compound accessors (Optional-based getCompound in 26.x)
         # Negative lookahead avoids rewriting getCompoundOrEmpty itself
         $t = $t -replace '\.getCompound(?!OrEmpty)\(([^)]+)\)', '.getCompoundOrEmpty($1)'
+        # CompoundTag Optional accessors (getBoolean/getString return Optional in 26.2)
+        $t = $t -replace '\.getPersistentData\(\)\.getBoolean\(([^)]+)\)', '.getPersistentData().getBooleanOr($1, false)'
+        $t = $t -replace '\.getPersistentData\(\)\.getString\(([^)]+)\)', '.getPersistentData().getStringOr($1, "")'
+        $t = $t -replace '\.getPersistentData\(\)\.getInt\(([^)]+)\)', '.getPersistentData().getIntOr($1, 0)'
+        $t = $t -replace '\.getPersistentData\(\)\.getDouble\(([^)]+)\)', '.getPersistentData().getDoubleOr($1, 0.0)'
+        # BlockEntity.loadWithComponents(CompoundTag, RegistryAccess) -> ValueInput
+        if ($t -match '\.loadWithComponents\s*\(\s*\w+\s*,') {
+            $t = [regex]::Replace($t,
+                '\.loadWithComponents\s*\(\s*(\w+)\s*,\s*([^)]+?)\.registryAccess\(\)\s*\)',
+                '.loadWithComponents(TagValueInput.create(ProblemReporter.DISCARDING, $2.registryAccess(), $1))')
+            if ($t -match '\bTagValueInput\b' -and $t -notmatch 'import\s+net\.minecraft\.world\.level\.storage\.TagValueInput\s*;') {
+                $t = [regex]::Replace($t, '(?m)^(package\s+[^;]+;\s*)',
+                    "`$1`r`nimport net.minecraft.util.ProblemReporter;`r`nimport net.minecraft.world.level.storage.TagValueInput;`r`n", 1)
+            }
+            elseif ($t -match '\bProblemReporter\b' -and $t -notmatch 'import\s+net\.minecraft\.util\.ProblemReporter\s*;') {
+                $t = [regex]::Replace($t, '(?m)^(package\s+[^;]+;\s*)',
+                    "`$1`r`nimport net.minecraft.util.ProblemReporter;`r`n", 1)
+            }
+        }
 
         # --- BlockState ---
         $t = $t -replace '\.isSolidRender\([^)]*\)', '.isSolidRender()'
@@ -949,12 +1131,12 @@ function Invoke-NeoForge26ApiRewritePass {
             'new SpawnEggItem($2.component(net.minecraft.core.component.DataComponents.ENTITY_DATA, net.minecraft.world.item.component.TypedEntityData.of($1, new net.minecraft.nbt.CompoundTag())))')
 
         # --- CommandSourceStack permission int -> LevelBasedPermissionSet ---
-        # MCreator / common: CommandSourceStack(..., serverLevelOrNull, 4, name, ...)
-        $t = $t -replace '(_level|_serverLevel|serverLevel|level)\s*,\s*4\s*,',
+        # MCreator lambdas rename locals (_level, _levelx, _levelxxxxxx, ...); match _level\w*
+        $t = $t -replace '(_level\w*|_serverLevel\w*|serverLevel|level)\s*,\s*4\s*,',
             '$1, net.minecraft.server.permissions.LevelBasedPermissionSet.OWNER,'
-        $t = $t -replace '(_level|_serverLevel|serverLevel|level)\s*,\s*2\s*,',
+        $t = $t -replace '(_level\w*|_serverLevel\w*|serverLevel|level)\s*,\s*2\s*,',
             '$1, net.minecraft.server.permissions.LevelBasedPermissionSet.GAMEMASTER,'
-        $t = $t -replace '(_level|_serverLevel|serverLevel|level)\s*,\s*3\s*,',
+        $t = $t -replace '(_level\w*|_serverLevel\w*|serverLevel|level)\s*,\s*3\s*,',
             '$1, net.minecraft.server.permissions.LevelBasedPermissionSet.ADMIN,'
         $t = $t -replace '(\?\s*\(ServerLevel\)[^,]+?\s*:\s*null)\s*,\s*4\s*,',
             '$1, net.minecraft.server.permissions.LevelBasedPermissionSet.OWNER,'
@@ -1098,6 +1280,254 @@ function Invoke-NeoForge26ApiRewritePass {
         # --- Advancement lookup ---
         $t = $t -replace '\.getAdvancements\(\)\.getAdvancement\(', '.getAdvancements().get('
 
+        # --- Hand-written NeoForge 1.21.x -> 26.2 (MedSystem / TarkovCraft lessons) ---
+        # Item use animation enum rename
+        $t = $t -replace '\bUseAnim\b', 'ItemUseAnimation'
+        $t = $t -replace 'import\s+net\.minecraft\.world\.item\.ItemUseAnimation;', 'import net.minecraft.world.item.ItemUseAnimation;'
+        $t = $t -replace 'import\s+net\.minecraft\.world\.item\.UseAnim;', 'import net.minecraft.world.item.ItemUseAnimation;'
+
+        # InteractionResultHolder<ItemStack> use(...) -> InteractionResult use(...)
+        $t = [regex]::Replace($t,
+            'public\s+(?:final\s+)?InteractionResultHolder\s*<\s*ItemStack\s*>\s+use\s*\(',
+            'public final InteractionResult use(')
+        $t = $t -replace 'InteractionResultHolder\.success\([^)]*\)', 'InteractionResult.SUCCESS'
+        $t = $t -replace 'InteractionResultHolder\.fail\([^)]*\)', 'InteractionResult.FAIL'
+        $t = $t -replace 'InteractionResultHolder\.pass\([^)]*\)', 'InteractionResult.PASS'
+        $t = $t -replace 'InteractionResultHolder\.consume\([^)]*\)', 'InteractionResult.CONSUME'
+        # Common leftover: switch wrapping InteractionResult back into InteractionResultHolder
+        $t = [regex]::Replace($t,
+            '(?ms)return\s+switch\s*\(\s*result\s*\)\s*\{\s*case\s+CONSUME,\s*CONSUME_PARTIAL\s*->\s*InteractionResult\.CONSUME\s*;\s*case\s+SUCCESS,\s*SUCCESS_NO_ITEM_USED\s*->\s*InteractionResult\.SUCCESS\s*;\s*case\s+FAIL\s*->\s*InteractionResult\.FAIL\s*;\s*case\s+PASS\s*->\s*InteractionResult\.PASS\s*;\s*default\s*->\s*throw\s+new\s+MatchException\([^;]*;\s*\}\s*;',
+            'return result;')
+        $t = $t -replace 'import\s+net\.minecraft\.world\.InteractionResultHolder\s*;\r?\n', ''
+
+        # NeoForge reload listener event rename
+        $t = $t -replace '\bAddReloadListenerEvent\b', 'AddServerReloadListenersEvent'
+        $t = $t -replace 'import\s+net\.neoforged\.neoforge\.event\.AddServerReloadListenersEvent;', 'import net.neoforged.neoforge.event.AddServerReloadListenersEvent;'
+        $t = $t -replace 'import\s+net\.neoforged\.neoforge\.event\.AddReloadListenerEvent;', 'import net.neoforged.neoforge.event.AddServerReloadListenersEvent;'
+
+        # LootContextParam -> ContextKey (custom context maps; loot package removed/moved)
+        $t = $t -replace '\bLootContextParam\b', 'ContextKey'
+        $t = $t -replace 'import\s+net\.minecraft\.world\.level\.storage\.loot\.parameters\.ContextKey;', 'import net.minecraft.util.context.ContextKey;'
+        $t = $t -replace 'import\s+net\.minecraft\.world\.level\.storage\.loot\.parameters\.LootContextParam;', 'import net.minecraft.util.context.ContextKey;'
+        if ($t -match '\bContextKey\b' -and $t -notmatch 'import\s+net\.minecraft\.util\.context\.ContextKey\s*;') {
+            $t = [regex]::Replace($t, '(?m)^(package\s+[^;]+;\s*)', "`$1`r`nimport net.minecraft.util.context.ContextKey;`r`n", 1)
+        }
+
+        # Advancements: critereon -> predicates / triggers packages
+        $t = $t -replace 'net\.minecraft\.advancements\.critereon\.SimpleCriterionTrigger', 'net.minecraft.advancements.triggers.SimpleCriterionTrigger'
+        $t = $t -replace 'net\.minecraft\.advancements\.critereon\.ContextAwarePredicate', 'net.minecraft.advancements.predicates.ContextAwarePredicate'
+        $t = $t -replace 'net\.minecraft\.advancements\.critereon\.EntityPredicate', 'net.minecraft.advancements.predicates.entity.EntityPredicate'
+        $t = $t -replace 'net\.minecraft\.advancements\.critereon\.DamageSourcePredicate', 'net.minecraft.advancements.predicates.DamageSourcePredicate'
+        $t = $t -replace 'net\.minecraft\.advancements\.critereon\.TagPredicate', 'net.minecraft.advancements.predicates.TagPredicate'
+        $t = $t -replace 'import\s+net\.minecraft\.advancements\.critereon\.SimpleCriterionTrigger\.SimpleInstance;', 'import net.minecraft.advancements.triggers.SimpleCriterionTrigger.SimpleInstance;'
+
+        # HUD layers: LayeredDraw.Layer removed -> NeoForge GuiLayer
+        $t = $t -replace 'import\s+net\.minecraft\.client\.gui\.LayeredDraw\.Layer\s*;', 'import net.neoforged.neoforge.client.gui.GuiLayer;'
+        $t = $t -replace 'import\s+net\.minecraft\.client\.gui\.LayeredDraw\s*;', 'import net.neoforged.neoforge.client.gui.GuiLayer;'
+        $t = $t -replace 'implements\s+LayeredDraw\.Layer\b', 'implements GuiLayer'
+        $t = $t -replace 'implements\s+Layer\b(?=\s*\{)', 'implements GuiLayer'
+        if ($t -match 'implements\s+GuiLayer') {
+            $t = [regex]::Replace($t,
+                'public\s+void\s+extractRenderState\s*\(\s*GuiGraphicsExtractor\s+',
+                'public void render(GuiGraphicsExtractor ')
+            if ($t -notmatch 'import\s+net\.neoforged\.neoforge\.client\.gui\.GuiLayer\s*;') {
+                $t = [regex]::Replace($t, '(?m)^(package\s+[^;]+;\s*)', "`$1`r`nimport net.neoforged.neoforge.client.gui.GuiLayer;`r`n", 1)
+            }
+        }
+
+        # ARGB helper: prefer vanilla net.minecraft.util.ARGB (Core helper removed in 26.2 TarkovCraft)
+        $t = $t -replace 'import\s+tnt\.tarkovcraft\.core\.util\.helper\.ARGB\s*;', 'import net.minecraft.util.ARGB;'
+        $t = $t -replace '\btnt\.tarkovcraft\.core\.util\.helper\.ARGB\b', 'net.minecraft.util.ARGB'
+
+        # HeartType moved Gui -> Hud
+        $t = $t -replace 'import\s+net\.minecraft\.client\.gui\.Gui\.HeartType\s*;', 'import net.minecraft.client.gui.Hud.HeartType;'
+        $t = $t -replace '\bGui\.HeartType\b', 'Hud.HeartType'
+
+        if ($t -ne $o) {
+            [System.IO.File]::WriteAllText($f.FullName, $t)
+            $touched++
+        }
+    }
+    return $touched
+}
+
+function Invoke-OptionalIntegrationExcludePass {
+    <#
+    .SYNOPSIS
+      Exclude optional third-party integration sources that are not on the compile classpath
+      (Carry On, Sable ragdoll, etc.) so leaf mods can still build.
+    #>
+    param([string]$Root)
+
+    $javaRoot = Join-Path $Root 'src\main\java'
+    if (-not (Test-Path $javaRoot)) { return 0 }
+
+    $softRoots = @(
+        'tschipp.carryon',
+        'dev.leo.sableplayerragdoll',
+        'mezz.jei',
+        'squeek.appleskin'
+    )
+    # Folder-name soft deps (even when the leaf Integration class uses ModList checks / no hard imports).
+    $softPathMarkers = @(
+        '[\\/]integration[\\/]carryon[\\/]',
+        '[\\/]integration[\\/]sable[\\/]',
+        '[\\/]integration[\\/]jei[\\/]',
+        '[\\/]integration[\\/]appleskin[\\/]'
+    )
+    $touched = 0
+    $integrationDirs = Get-ChildItem $javaRoot -Recurse -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -eq 'integration' -or $_.FullName -match '[\\/]integration[\\/]' }
+
+    foreach ($dir in @($integrationDirs)) {
+        $files = Get-ChildItem $dir.FullName -Recurse -Filter '*.java' -File -ErrorAction SilentlyContinue
+        foreach ($f in $files) {
+            $text = [System.IO.File]::ReadAllText($f.FullName)
+            $needsSoft = $false
+            foreach ($pkg in $softRoots) {
+                if ($text -match [regex]::Escape("import $pkg")) { $needsSoft = $true; break }
+            }
+            if (-not $needsSoft) {
+                foreach ($markerRe in $softPathMarkers) {
+                    if ($f.FullName -match $markerRe) { $needsSoft = $true; break }
+                }
+            }
+            if (-not $needsSoft) { continue }
+
+            # Prefer excluding via build.gradle; also neutralize file so compile cannot see it
+            $rel = $f.FullName.Substring($javaRoot.Length).TrimStart('\','/')
+            $marker = Join-Path $Root 'OPTIONAL_INTEGRATIONS_EXCLUDED.txt'
+            Add-Content -LiteralPath $marker -Value $rel
+            Remove-Item -LiteralPath $f.FullName -Force
+            $touched++
+        }
+    }
+
+    if ($touched -gt 0) {
+        $bg = Join-Path $Root 'build.gradle'
+        if (Test-Path $bg) {
+            $g = [System.IO.File]::ReadAllText($bg)
+            if ($g -notmatch 'OPTIONAL_INTEGRATIONS_EXCLUDED') {
+                $excludeBlock = @"
+
+// Soft-dep integrations removed when companion mods are absent (OPTIONAL_INTEGRATIONS_EXCLUDED.txt).
+sourceSets.main.java {
+    exclude '**/integration/carryon/**'
+    exclude '**/integration/sable/**'
+}
+"@
+                if ($g -match "(?m)^sourceSets\.main\.java\s*\{") {
+                    # already has java excludes (datagen); append more excludes inside if possible
+                    $g = $g -replace "(sourceSets\.main\.java\s*\{)", "`$1`r`n    exclude '**/integration/carryon/**'`r`n    exclude '**/integration/sable/**'"
+                }
+                else {
+                    $g += $excludeBlock
+                }
+                [System.IO.File]::WriteAllText($bg, $g)
+            }
+        }
+    }
+    return $touched
+}
+
+function Invoke-DfuCodecRepairPass {
+    <#
+    .SYNOPSIS
+      Repair Vineflower DFU / record / mixin artifacts that break RecordCodecBuilder inference.
+      1) Explicit RecordCodecBuilder.<T>create / mapCodec type witnesses (fixes Kind1.group inference).
+      2) Record component field access inside .validate(...) lambdas: config.limbs -> config.limbs().
+      3) Mixin (Target)this -> (Target)(Object)this.
+    #>
+    param([string]$Root)
+
+    $files = Get-ChildItem (Join-Path $Root 'src\main\java') -Recurse -Filter '*.java' -File -ErrorAction SilentlyContinue
+    $touched = 0
+    foreach ($f in $files) {
+        $t = [System.IO.File]::ReadAllText($f.FullName)
+        $o = $t
+
+        # Explicit type witnesses on RecordCodecBuilder.create / mapCodec assignments.
+        $t = [regex]::Replace($t,
+            '(?m)(Codec\s*<\s*([A-Za-z_][\w]*)\s*>\s+\w+\s*=\s*RecordCodecBuilder)\.(create)\s*\(',
+            '${1}.<$2>$3(')
+        $t = [regex]::Replace($t,
+            '(?m)(MapCodec\s*<\s*([A-Za-z_][\w]*(?:\.[A-Za-z_][\w]*)*)\s*>\s+\w+\s*=\s*RecordCodecBuilder)\.(mapCodec)\s*\(',
+            '${1}.<$2>$3(')
+        # Nested record types: Codec<Outer.Inner>
+        $t = [regex]::Replace($t,
+            '(?m)(Codec\s*<\s*([A-Za-z_][\w]*\.[A-Za-z_][\w]*)\s*>\s+\w+\s*=\s*RecordCodecBuilder)\.(create)\s*\(',
+            '${1}.<$2>$3(')
+
+        # Collect record component names in this file.
+        $components = New-Object 'System.Collections.Generic.HashSet[string]'
+        foreach ($rm in [regex]::Matches($t, '(?m)\brecord\s+\w+\s*\(([^)]*)\)')) {
+            $paramList = $rm.Groups[1].Value
+            if (-not $paramList.Trim()) { continue }
+            $depth = 0
+            $cur = New-Object System.Text.StringBuilder
+            $parts = New-Object System.Collections.Generic.List[string]
+            foreach ($ch in $paramList.ToCharArray()) {
+                if ($ch -eq '<' -or $ch -eq '(') { $depth++ }
+                elseif ($ch -eq '>' -or $ch -eq ')') { if ($depth -gt 0) { $depth-- } }
+                elseif ($ch -eq ',' -and $depth -eq 0) {
+                    $parts.Add($cur.ToString()) | Out-Null
+                    [void]$cur.Clear()
+                    continue
+                }
+                [void]$cur.Append($ch)
+            }
+            if ($cur.Length -gt 0) { $parts.Add($cur.ToString()) | Out-Null }
+            foreach ($p in $parts) {
+                if ($p -match '(?s)([A-Za-z_][\w]*)\s*$') { [void]$components.Add($matches[1]) }
+            }
+        }
+
+        # Only rewrite accessors inside balanced .validate( ... ) regions (avoid builder.field damage).
+        if ($components.Count -gt 0) {
+            $sb = New-Object System.Text.StringBuilder
+            $i = 0
+            while ($i -lt $t.Length) {
+                $idx = $t.IndexOf('.validate(', $i)
+                if ($idx -lt 0) { [void]$sb.Append($t.Substring($i)); break }
+                [void]$sb.Append($t.Substring($i, $idx - $i))
+                $startArgs = $idx + '.validate('.Length
+                $depth = 1
+                $j = $startArgs
+                while ($j -lt $t.Length -and $depth -gt 0) {
+                    $c = $t[$j]
+                    if ($c -eq '(') { $depth++ }
+                    elseif ($c -eq ')') { $depth-- }
+                    $j++
+                }
+                $body = $t.Substring($startArgs, ($j - 1) - $startArgs)
+                foreach ($comp in @($components)) {
+                    $rx = [regex]::new("(?<![\w.])([a-z_][\w]*)\.$([regex]::Escape($comp))\b(?!\s*\()")
+                    $body = $rx.Replace($body, {
+                            param($mm)
+                            $recv = $mm.Groups[1].Value
+                            if ($recv -eq 'this' -or $recv -eq 'super') { return $mm.Value }
+                            return ($recv + '.' + $comp + '()')
+                        })
+                }
+                [void]$sb.Append('.validate(')
+                [void]$sb.Append($body)
+                [void]$sb.Append(')')
+                $i = $j
+            }
+            $t = $sb.ToString()
+        }
+
+        # Mixin: (LivingEntity)this -> (LivingEntity)(Object)this
+        if ($t -match '@Mixin\b') {
+            $t = [regex]::Replace($t, '\(\s*([A-Za-z_][\w]*)\s*\)\s*this\b', '($1)(Object)this')
+            $t = $t -replace '\((\w+)\)\(Object\)\(Object\)this\b', '($1)(Object)this'
+            $t = $t -replace '\(Object\)\(Object\)this\b', '(Object)this'
+        }
+
+        # CheckerFramework annotations often lack the dependency on decompiled trees
+        $t = $t -replace 'import\s+org\.checkerframework\.checker\.nullness\.qual\.[^;]+;\r?\n', ''
+        $t = $t -replace '@NonNull\b\s*', ''
+
         if ($t -ne $o) {
             [System.IO.File]::WriteAllText($f.FullName, $t)
             $touched++
@@ -1174,6 +1604,136 @@ function Invoke-Mcreator1218ToNeoForge262Pass {
         $t = [regex]::Replace($t,
             '(public|protected)\s+void\s+extractBackground\s*\(\s*GuiGraphicsExtractor\s+(\w+)\s*,\s*float\s+(\w+)\s*,\s*int\s+(\w+)\s*,\s*int\s+(\w+)\s*\)',
             '$1 void extractBackground(GuiGraphicsExtractor $2, int $4, int $5, float $3)')
+
+        # Mel/MCreator 1.21.4 screens on 26.2: strip removed RenderSystem blend/color; blit pipeline; text(); client packets
+        $t = [regex]::Replace($t, '(?m)^\s*RenderSystem\.(setShaderColor|enableBlend|disableBlend|defaultBlendFunc)\([^;]*\);\s*\r?\n', '')
+        $t = $t -replace '(?m)^\s*RenderSystem\.[^;]+;\s*\r?\n', ''
+        $t = $t.Replace('RenderType::guiTextured', 'net.minecraft.client.renderer.RenderPipelines.GUI_TEXTURED')
+        $t = $t -replace 'import\s+net\.minecraft\.client\.renderer\.rendertype\.RenderTypes;\r?\n', ''
+        $t = $t -replace 'import\s+com\.mojang\.blaze3d\.systems\.RenderSystem;\r?\n', ''
+        $t = [regex]::Replace($t, 'guiGraphics\.drawString\s*\(', 'guiGraphics.text(')
+        $t = $t -replace 'ClientClientPacketDistributor', 'ClientPacketDistributor'
+        if ($t -match '(?<!Client)PacketDistributor\.sendToServer') {
+            $t = [regex]::Replace($t, '(?<!Client)PacketDistributor\.sendToServer', 'ClientPacketDistributor.sendToServer')
+            # Keep PacketDistributor import when sendToPlayer (server) remains
+            if ($t -match '(?<!\w)PacketDistributor\.sendToPlayer') {
+                if ($t -notmatch 'import\s+net\.neoforged\.neoforge\.client\.network\.ClientPacketDistributor;') {
+                    $t = [regex]::Replace($t, '(?m)^(package\s+[^;]+;\s*)', "`$1`r`nimport net.neoforged.neoforge.client.network.ClientPacketDistributor;`r`n", 1)
+                }
+                if ($t -notmatch 'import\s+net\.neoforged\.neoforge\.network\.PacketDistributor;') {
+                    $t = [regex]::Replace($t, '(?m)^(package\s+[^;]+;\s*)', "`$1`r`nimport net.neoforged.neoforge.network.PacketDistributor;`r`n", 1)
+                }
+            }
+            else {
+                $t = $t -replace 'import\s+net\.neoforged\.neoforge\.network\.PacketDistributor;', 'import net.neoforged.neoforge.client.network.ClientPacketDistributor;'
+                if ($t -notmatch 'import\s+net\.neoforged\.neoforge\.client\.network\.ClientPacketDistributor;') {
+                    $t = [regex]::Replace($t, '(?m)^(package\s+[^;]+;\s*)', "`$1`r`nimport net.neoforged.neoforge.client.network.ClientPacketDistributor;`r`n", 1)
+                }
+            }
+        }
+        elseif ($t -match '(?<!\w)PacketDistributor\.sendToPlayer' -and $t -notmatch 'import\s+net\.neoforged\.neoforge\.network\.PacketDistributor;') {
+            $t = [regex]::Replace($t, '(?m)^(package\s+[^;]+;\s*)', "`$1`r`nimport net.neoforged.neoforge.network.PacketDistributor;`r`n", 1)
+        }
+        # Switch-expression: yield ...; break; is illegal
+        $t = [regex]::Replace($t, '(?m)^(\s*yield\s+[^;]+;)\s*\r?\n\s*break\s*;\s*$', '$1')
+        # 26.2 emissiveRendering is Predicate<BlockState>
+        $t = [regex]::Replace($t, '\.emissiveRendering\s*\(\s*\(\s*(\w+)\s*,\s*\w+\s*,\s*\w+\s*\)\s*->', '.emissiveRendering(($1) ->')
+        # GameProfile / weather / Optional NBT via copyTag / CHAIN mangling leftovers
+        $t = $t.Replace('.getGameProfile().getId()', '.getGameProfile().id()')
+        $t = [regex]::Replace($t, '(\w+)\.getLevelData\(\)\.isRaining(?:At)?\(\)', '($1 instanceof net.minecraft.world.level.Level __lvlRain && __lvlRain.isRaining())')
+        $t = [regex]::Replace($t, '(\w+)\.getLevelData\(\)\.isThundering\(\)', '($1 instanceof net.minecraft.world.level.Level __lvlThunder && __lvlThunder.isThundering())')
+        $t = $t.Replace('MelsDecoModBlocks.IRON_CHAIN_LINK_FENCE', 'MelsDecoModBlocks.CHAIN_LINK_FENCE')
+        $t = $t.Replace('MelsDecoModItems.IRON_CHAIN_LINK_FENCE', 'MelsDecoModItems.CHAIN_LINK_FENCE')
+        $t = $t.Replace('MelsDecoModBlocks.IRON_CHAINSAW', 'MelsDecoModBlocks.CHAINSAW')
+        $t = $t.Replace('MelsDecoModItems.IRON_CHAINSAW_ITEM', 'MelsDecoModItems.CHAINSAW_ITEM')
+        $t = $t.Replace('MelsDecoModItems.IRON_CHAINSAW', 'MelsDecoModItems.CHAINSAW')
+        $t = [regex]::Replace($t, '\.copyTag\(\)\s*\r?\n?\s*\.getDouble\(([^)]+)\)', '.copyTag().getDoubleOr($1, Double.NaN)')
+        $t = [regex]::Replace($t, '\.copyTag\(\)\.getDouble\(([^)]+)\)', '.copyTag().getDoubleOr($1, Double.NaN)')
+        $t = [regex]::Replace($t, '\.copyTag\(\)\s*\r?\n?\s*\.getBoolean\(([^)]+)\)', '.copyTag().getBooleanOr($1, false)')
+        $t = [regex]::Replace($t, '\.copyTag\(\)\.getBoolean\(([^)]+)\)', '.copyTag().getBooleanOr($1, false)')
+        $t = [regex]::Replace($t, '\.copyTag\(\)\s*\r?\n?\s*\.getInt\(([^)]+)\)', '.copyTag().getIntOr($1, 0)')
+        $t = [regex]::Replace($t, '\.copyTag\(\)\.getInt\(([^)]+)\)', '.copyTag().getIntOr($1, 0)')
+        $t = [regex]::Replace($t, '\.copyTag\(\)\s*\r?\n?\s*\.getString\(([^)]+)\)', '.copyTag().getStringOr($1, "")')
+        $t = [regex]::Replace($t, '\.copyTag\(\)\.getString\(([^)]+)\)', '.copyTag().getStringOr($1, "")')
+        # PersistentData Optional accessors (Mel block NBT helpers)
+        $t = $t -replace '\.getPersistentData\(\)\.getBoolean\(([^)]+)\)', '.getPersistentData().getBooleanOr($1, false)'
+        $t = $t -replace '\.getPersistentData\(\)\.getString\(([^)]+)\)', '.getPersistentData().getStringOr($1, "")'
+        $t = $t -replace '\.getPersistentData\(\)\.getInt\(([^)]+)\)', '.getPersistentData().getIntOr($1, 0)'
+        $t = $t -replace '\.getPersistentData\(\)\.getDouble\(([^)]+)\)', '.getPersistentData().getDoubleOr($1, 0.0)'
+        # BlockEntity.loadWithComponents(CompoundTag, RegistryAccess) -> ValueInput
+        if ($t -match '\.loadWithComponents\s*\(\s*\w+\s*,') {
+            $t = [regex]::Replace($t,
+                '\.loadWithComponents\s*\(\s*(\w+)\s*,\s*([^)]+?)\.registryAccess\(\)\s*\)',
+                '.loadWithComponents(TagValueInput.create(ProblemReporter.DISCARDING, $2.registryAccess(), $1))')
+            if ($t -match '\bTagValueInput\b' -and $t -notmatch 'import\s+net\.minecraft\.world\.level\.storage\.TagValueInput\s*;') {
+                $t = [regex]::Replace($t, '(?m)^(package\s+[^;]+;\s*)',
+                    "`$1`r`nimport net.minecraft.util.ProblemReporter;`r`nimport net.minecraft.world.level.storage.TagValueInput;`r`n", 1)
+            }
+        }
+        # Item tooltip / hurtEnemy / inventoryTick (Mel cosmetics)
+        if ($t -match 'void\s+appendHoverText\s*\(\s*ItemStack\s+\w+\s*,\s*TooltipContext\s+\w+\s*,\s*List<\s*Component\s*>') {
+            if ($t -notmatch 'import\s+java\.util\.function\.Consumer;') {
+                $t = [regex]::Replace($t, '(?m)^(package\s+[^;]+;\s*)', "`$1`r`nimport java.util.function.Consumer;`r`nimport net.minecraft.world.item.component.TooltipDisplay;`r`n", 1)
+            }
+            $t = [regex]::Replace($t,
+                'void\s+appendHoverText\s*\(\s*ItemStack\s+(\w+)\s*,\s*TooltipContext\s+(\w+)\s*,\s*List<\s*Component\s*>\s+(\w+)\s*,\s*TooltipFlag\s+(\w+)\s*\)',
+                'void appendHoverText(ItemStack $1, TooltipContext $2, TooltipDisplay display, Consumer<Component> $3, TooltipFlag $4)')
+            $t = [regex]::Replace($t,
+                'super\.appendHoverText\s*\(\s*(\w+)\s*,\s*(\w+)\s*,\s*(\w+)\s*,\s*(\w+)\s*\)',
+                'super.appendHoverText($1, $2, display, $3, $4)')
+            $t = [regex]::Replace($t, '\b(\w+)\.add\((Component\.[^;]+)\)', '$1.accept($2)')
+        }
+        $t = [regex]::Replace($t,
+            'public\s+boolean\s+hurtEnemy\s*\(\s*ItemStack\s+(\w+)\s*,\s*LivingEntity\s+(\w+)\s*,\s*LivingEntity\s+(\w+)\s*\)',
+            'public void hurtEnemy(ItemStack $1, LivingEntity $2, LivingEntity $3)')
+        # void hurtEnemy must not return boolean leftovers
+        $t = [regex]::Replace($t,
+            '(public\s+void\s+hurtEnemy\s*\([^)]*\)\s*\{(?:[^{}]|\{[^{}]*\})*?)return\s+(?:true|false)\s*;',
+            '$1')
+        $t = $t.Replace('LivingEntity.getSlotForHand(entity.getUsedItemHand())', 'entity.getUsedItemHand().asEquipmentSlot()')
+        $t = [regex]::Replace($t,
+            'public\s+void\s+inventoryTick\s*\(\s*ItemStack\s+(\w+)\s*,\s*Level\s+(\w+)\s*,\s*Entity\s+(\w+)\s*,\s*int\s+(\w+)\s*,\s*boolean\s+(\w+)\s*\)',
+            'public void inventoryTick(ItemStack $1, net.minecraft.server.level.ServerLevel $2, Entity $3, net.minecraft.world.entity.EquipmentSlot $4)')
+        # Capture 4th arg name (slot); prior bug used literal $4 with only 3 groups
+        $t = [regex]::Replace($t,
+            'super\.inventoryTick\s*\(\s*(\w+)\s*,\s*(\w+)\s*,\s*(\w+)\s*,\s*(\w+)\s*,\s*\w+\s*\)',
+            'super.inventoryTick($1, $2, $3, $4)')
+        $t = $t -replace 'super\.inventoryTick\(([^,]+),\s*([^,]+),\s*([^,]+),\s*\$4\)', 'super.inventoryTick($1, $2, $3, slot)'
+        # Armor worn check: getArmorSlots / bad getEquippedSlots -> explicit armor slots List
+        $armorWorn = 'java.util.List.of($1.getItemBySlot(net.minecraft.world.entity.EquipmentSlot.HEAD), $1.getItemBySlot(net.minecraft.world.entity.EquipmentSlot.CHEST), $1.getItemBySlot(net.minecraft.world.entity.EquipmentSlot.LEGS), $1.getItemBySlot(net.minecraft.world.entity.EquipmentSlot.FEET)).contains($2)'
+        $t = [regex]::Replace($t,
+            'Iterables\.contains\(\s*(\w+)\.getArmorSlots\(\)\s*,\s*(\w+)\s*\)',
+            $armorWorn)
+        $t = [regex]::Replace($t,
+            'Iterables\.contains\(\s*(\w+)\.getEquippedSlots\s*\(\s*net\.minecraft\.world\.entity\.EquipmentSlotGroup\.ARMOR\s*\)\s*,\s*(\w+)\s*\)',
+            $armorWorn)
+        $t = $t.Replace('.getArmorSlots()', '.getEquippedSlots(net.minecraft.world.entity.EquipmentSlotGroup.ARMOR)')
+        # ItemModel / RangeSelect: LivingEntity owner arg -> ItemOwner (26.2)
+        if ($t -match 'RangeSelectItemModelProperty|implements\s+ItemModel\b|LegacyOverrideSelectItemModel') {
+            $t = [regex]::Replace($t,
+                '(public\s+float\s+get\s*\(\s*ItemStack\s+\w+\s*,\s*@Nullable\s+ClientLevel\s+\w+\s*,\s*@Nullable\s+)LivingEntity(\s+)(\w+)(\s*,\s*int\s+\w+\s*\))',
+                '${1}ItemOwner${2}${3}${4}')
+            $t = $t -replace '@Nullable LivingEntity entity', '@Nullable ItemOwner entity'
+            $t = $t -replace '@Nullable LivingEntity var3', '@Nullable ItemOwner var3'
+            # SprayPaint-style: execute(LivingEntity) needs asLivingEntity()
+            if ($t -notmatch 'DisplaySprayPaintDesignItemProcedure\.execute\([^)]*asLivingEntity') {
+                $t = [regex]::Replace($t,
+                    'DisplaySprayPaintDesignItemProcedure\.execute\((\w+)\)',
+                    'DisplaySprayPaintDesignItemProcedure.execute($1 != null ? $1.asLivingEntity() : null)')
+            }
+            # ConditionalItemModelProperty.get still wants LivingEntity
+            $t = $t.Replace(
+                'this.property.get(itemStack, level, entity, seed, displayContext)',
+                'this.property.get(itemStack, level, entity == null ? null : entity.asLivingEntity(), seed, displayContext)')
+            if ($t -match '\bItemOwner\b' -and $t -notmatch 'import\s+net\.minecraft\.world\.entity\.ItemOwner\s*;') {
+                $t = [regex]::Replace($t, '(?m)^(package\s+[^;]+;\s*)',
+                    "`$1`r`nimport net.minecraft.world.entity.ItemOwner;`r`n", 1)
+            }
+        }
+        $t = [regex]::Replace($t, '\.getType\(\)\.is\(([^)]+)\)', '.getType().builtInRegistryHolder().is($1)')
+        # ItemModel.Unbaked.bake gained Matrix4fc in 26.2
+        $t = [regex]::Replace($t, 'public\s+ItemModel\s+bake\s*\(\s*BakingContext\s+(\w+)\s*\)(\s*\{)', 'public ItemModel bake(BakingContext $1, org.joml.Matrix4fc transformation)$2')
+        $t = [regex]::Replace($t, '(\.model|\.fallback)\.bake\((\w+)\)', '$1.bake($2, transformation)')
 
         # keyPressed(int,int,int) -> KeyEvent (ESC close handled by Screen; keep override when custom)
         if ($t -match 'boolean\s+keyPressed\s*\(\s*int\s+\w+\s*,\s*int\s+\w+\s*,\s*int\s+\w+\s*\)') {
@@ -1373,6 +1933,120 @@ function Invoke-McreatorForge1201ResiduePass {
         # 26.2 GuiGraphicsExtractor.blit requires a RenderPipeline
         $t = $t -replace 'getGuiGraphics\(\)\.blit\(Identifier\.parse\(', 'getGuiGraphics().blit(net.minecraft.client.renderer.RenderPipelines.GUI_TEXTURED, Identifier.parse('
         $t = $t -replace '(?m)^\s*RenderSystem\.[^;]+;\s*\r?\n', ''
+        # Mel/MCreator 1.21.x screens: blit(RenderType::guiTextured, ...) + drawString + PacketDistributor.sendToServer
+        $t = $t.Replace('RenderType::guiTextured', 'net.minecraft.client.renderer.RenderPipelines.GUI_TEXTURED')
+        $t = $t -replace 'import\s+net\.minecraft\.client\.renderer\.rendertype\.RenderTypes;\r?\n', ''
+        $t = $t -replace 'import\s+com\.mojang\.blaze3d\.systems\.RenderSystem;\r?\n', ''
+        $t = [regex]::Replace($t, 'guiGraphics\.drawString\s*\(', 'guiGraphics.text(')
+        $t = $t -replace 'ClientClientPacketDistributor', 'ClientPacketDistributor'
+        if ($t -match '(?<!Client)PacketDistributor\.sendToServer') {
+            $t = [regex]::Replace($t, '(?<!Client)PacketDistributor\.sendToServer', 'ClientPacketDistributor.sendToServer')
+            if ($t -match '(?<!\w)PacketDistributor\.sendToPlayer') {
+                if ($t -notmatch 'import\s+net\.neoforged\.neoforge\.client\.network\.ClientPacketDistributor;') {
+                    $t = [regex]::Replace($t, '(?m)^(package\s+[^;]+;\s*)', "`$1`r`nimport net.neoforged.neoforge.client.network.ClientPacketDistributor;`r`n", 1)
+                }
+                if ($t -notmatch 'import\s+net\.neoforged\.neoforge\.network\.PacketDistributor;') {
+                    $t = [regex]::Replace($t, '(?m)^(package\s+[^;]+;\s*)', "`$1`r`nimport net.neoforged.neoforge.network.PacketDistributor;`r`n", 1)
+                }
+            }
+            else {
+                $t = $t -replace 'import\s+net\.neoforged\.neoforge\.network\.PacketDistributor;', 'import net.neoforged.neoforge.client.network.ClientPacketDistributor;'
+                if ($t -notmatch 'import\s+net\.neoforged\.neoforge\.client\.network\.ClientPacketDistributor;') {
+                    $t = [regex]::Replace($t, '(?m)^(package\s+[^;]+;\s*)', "`$1`r`nimport net.neoforged.neoforge.client.network.ClientPacketDistributor;`r`n", 1)
+                }
+            }
+        }
+        elseif ($t -match '(?<!\w)PacketDistributor\.sendToPlayer' -and $t -notmatch 'import\s+net\.neoforged\.neoforge\.network\.PacketDistributor;') {
+            $t = [regex]::Replace($t, '(?m)^(package\s+[^;]+;\s*)', "`$1`r`nimport net.neoforged.neoforge.network.PacketDistributor;`r`n", 1)
+        }
+        # Switch-expression cleanup: yield ...; break; is illegal
+        $t = [regex]::Replace($t, '(?m)^(\s*yield\s+[^;]+;)\s*\r?\n\s*break\s*;\s*$', '$1')
+        # GameProfile / weather / CHAIN_LINK mangling leftovers / copyTag Optional NBT
+        $t = $t.Replace('.getGameProfile().getId()', '.getGameProfile().id()')
+        $t = [regex]::Replace($t, '(\w+)\.getLevelData\(\)\.isRaining(?:At)?\(\)', '($1 instanceof net.minecraft.world.level.Level __lvlRain && __lvlRain.isRaining())')
+        $t = [regex]::Replace($t, '(\w+)\.getLevelData\(\)\.isThundering\(\)', '($1 instanceof net.minecraft.world.level.Level __lvlThunder && __lvlThunder.isThundering())')
+        $t = $t.Replace('MelsDecoModBlocks.IRON_CHAIN_LINK_FENCE', 'MelsDecoModBlocks.CHAIN_LINK_FENCE')
+        $t = $t.Replace('MelsDecoModItems.IRON_CHAIN_LINK_FENCE', 'MelsDecoModItems.CHAIN_LINK_FENCE')
+        $t = $t.Replace('MelsDecoModBlocks.IRON_CHAINSAW', 'MelsDecoModBlocks.CHAINSAW')
+        $t = $t.Replace('MelsDecoModItems.IRON_CHAINSAW_ITEM', 'MelsDecoModItems.CHAINSAW_ITEM')
+        $t = $t.Replace('MelsDecoModItems.IRON_CHAINSAW', 'MelsDecoModItems.CHAINSAW')
+        $t = [regex]::Replace($t, '\.copyTag\(\)\s*\r?\n?\s*\.getDouble\(([^)]+)\)', '.copyTag().getDoubleOr($1, Double.NaN)')
+        $t = [regex]::Replace($t, '\.copyTag\(\)\.getDouble\(([^)]+)\)', '.copyTag().getDoubleOr($1, Double.NaN)')
+        $t = [regex]::Replace($t, '\.copyTag\(\)\s*\r?\n?\s*\.getBoolean\(([^)]+)\)', '.copyTag().getBooleanOr($1, false)')
+        $t = [regex]::Replace($t, '\.copyTag\(\)\.getBoolean\(([^)]+)\)', '.copyTag().getBooleanOr($1, false)')
+        $t = [regex]::Replace($t, '\.copyTag\(\)\s*\r?\n?\s*\.getInt\(([^)]+)\)', '.copyTag().getIntOr($1, 0)')
+        $t = [regex]::Replace($t, '\.copyTag\(\)\.getInt\(([^)]+)\)', '.copyTag().getIntOr($1, 0)')
+        $t = [regex]::Replace($t, '\.copyTag\(\)\s*\r?\n?\s*\.getString\(([^)]+)\)', '.copyTag().getStringOr($1, "")')
+        $t = [regex]::Replace($t, '\.copyTag\(\)\.getString\(([^)]+)\)', '.copyTag().getStringOr($1, "")')
+        $t = $t -replace '\.getPersistentData\(\)\.getBoolean\(([^)]+)\)', '.getPersistentData().getBooleanOr($1, false)'
+        $t = $t -replace '\.getPersistentData\(\)\.getString\(([^)]+)\)', '.getPersistentData().getStringOr($1, "")'
+        $t = $t -replace '\.getPersistentData\(\)\.getInt\(([^)]+)\)', '.getPersistentData().getIntOr($1, 0)'
+        $t = $t -replace '\.getPersistentData\(\)\.getDouble\(([^)]+)\)', '.getPersistentData().getDoubleOr($1, 0.0)'
+        if ($t -match '\.loadWithComponents\s*\(\s*\w+\s*,') {
+            $t = [regex]::Replace($t,
+                '\.loadWithComponents\s*\(\s*(\w+)\s*,\s*([^)]+?)\.registryAccess\(\)\s*\)',
+                '.loadWithComponents(TagValueInput.create(ProblemReporter.DISCARDING, $2.registryAccess(), $1))')
+            if ($t -match '\bTagValueInput\b' -and $t -notmatch 'import\s+net\.minecraft\.world\.level\.storage\.TagValueInput\s*;') {
+                $t = [regex]::Replace($t, '(?m)^(package\s+[^;]+;\s*)',
+                    "`$1`r`nimport net.minecraft.util.ProblemReporter;`r`nimport net.minecraft.world.level.storage.TagValueInput;`r`n", 1)
+            }
+        }
+        # Item tooltip / hurtEnemy / inventoryTick (Mel cosmetics)
+        if ($t -match 'void\s+appendHoverText\s*\(\s*ItemStack\s+\w+\s*,\s*TooltipContext\s+\w+\s*,\s*List<\s*Component\s*>') {
+            if ($t -notmatch 'import\s+java\.util\.function\.Consumer;') {
+                $t = [regex]::Replace($t, '(?m)^(package\s+[^;]+;\s*)', "`$1`r`nimport java.util.function.Consumer;`r`nimport net.minecraft.world.item.component.TooltipDisplay;`r`n", 1)
+            }
+            $t = [regex]::Replace($t,
+                'void\s+appendHoverText\s*\(\s*ItemStack\s+(\w+)\s*,\s*TooltipContext\s+(\w+)\s*,\s*List<\s*Component\s*>\s+(\w+)\s*,\s*TooltipFlag\s+(\w+)\s*\)',
+                'void appendHoverText(ItemStack $1, TooltipContext $2, TooltipDisplay display, Consumer<Component> $3, TooltipFlag $4)')
+            $t = [regex]::Replace($t,
+                'super\.appendHoverText\s*\(\s*(\w+)\s*,\s*(\w+)\s*,\s*(\w+)\s*,\s*(\w+)\s*\)',
+                'super.appendHoverText($1, $2, display, $3, $4)')
+            $t = [regex]::Replace($t, '\b(\w+)\.add\((Component\.[^;]+)\)', '$1.accept($2)')
+        }
+        $t = [regex]::Replace($t,
+            'public\s+boolean\s+hurtEnemy\s*\(\s*ItemStack\s+(\w+)\s*,\s*LivingEntity\s+(\w+)\s*,\s*LivingEntity\s+(\w+)\s*\)',
+            'public void hurtEnemy(ItemStack $1, LivingEntity $2, LivingEntity $3)')
+        $t = [regex]::Replace($t,
+            '(public\s+void\s+hurtEnemy\s*\([^)]*\)\s*\{(?:[^{}]|\{[^{}]*\})*?)return\s+(?:true|false)\s*;',
+            '$1')
+        $t = $t.Replace('LivingEntity.getSlotForHand(entity.getUsedItemHand())', 'entity.getUsedItemHand().asEquipmentSlot()')
+        $t = [regex]::Replace($t,
+            'public\s+void\s+inventoryTick\s*\(\s*ItemStack\s+(\w+)\s*,\s*Level\s+(\w+)\s*,\s*Entity\s+(\w+)\s*,\s*int\s+(\w+)\s*,\s*boolean\s+(\w+)\s*\)',
+            'public void inventoryTick(ItemStack $1, net.minecraft.server.level.ServerLevel $2, Entity $3, net.minecraft.world.entity.EquipmentSlot $4)')
+        $t = [regex]::Replace($t,
+            'super\.inventoryTick\s*\(\s*(\w+)\s*,\s*(\w+)\s*,\s*(\w+)\s*,\s*(\w+)\s*,\s*\w+\s*\)',
+            'super.inventoryTick($1, $2, $3, $4)')
+        $t = $t -replace 'super\.inventoryTick\(([^,]+),\s*([^,]+),\s*([^,]+),\s*\$4\)', 'super.inventoryTick($1, $2, $3, slot)'
+        $armorWorn = 'java.util.List.of($1.getItemBySlot(net.minecraft.world.entity.EquipmentSlot.HEAD), $1.getItemBySlot(net.minecraft.world.entity.EquipmentSlot.CHEST), $1.getItemBySlot(net.minecraft.world.entity.EquipmentSlot.LEGS), $1.getItemBySlot(net.minecraft.world.entity.EquipmentSlot.FEET)).contains($2)'
+        $t = [regex]::Replace($t,
+            'Iterables\.contains\(\s*(\w+)\.getArmorSlots\(\)\s*,\s*(\w+)\s*\)',
+            $armorWorn)
+        $t = [regex]::Replace($t,
+            'Iterables\.contains\(\s*(\w+)\.getEquippedSlots\s*\(\s*net\.minecraft\.world\.entity\.EquipmentSlotGroup\.ARMOR\s*\)\s*,\s*(\w+)\s*\)',
+            $armorWorn)
+        $t = $t.Replace('.getArmorSlots()', '.getEquippedSlots(net.minecraft.world.entity.EquipmentSlotGroup.ARMOR)')
+        if ($t -match 'RangeSelectItemModelProperty|implements\s+ItemModel\b|LegacyOverrideSelectItemModel') {
+            $t = [regex]::Replace($t,
+                '(public\s+float\s+get\s*\(\s*ItemStack\s+\w+\s*,\s*@Nullable\s+ClientLevel\s+\w+\s*,\s*@Nullable\s+)LivingEntity(\s+)(\w+)(\s*,\s*int\s+\w+\s*\))',
+                '${1}ItemOwner${2}${3}${4}')
+            $t = $t -replace '@Nullable LivingEntity entity', '@Nullable ItemOwner entity'
+            $t = $t -replace '@Nullable LivingEntity var3', '@Nullable ItemOwner var3'
+            if ($t -notmatch 'DisplaySprayPaintDesignItemProcedure\.execute\([^)]*asLivingEntity') {
+                $t = [regex]::Replace($t,
+                    'DisplaySprayPaintDesignItemProcedure\.execute\((\w+)\)',
+                    'DisplaySprayPaintDesignItemProcedure.execute($1 != null ? $1.asLivingEntity() : null)')
+            }
+            $t = $t.Replace(
+                'this.property.get(itemStack, level, entity, seed, displayContext)',
+                'this.property.get(itemStack, level, entity == null ? null : entity.asLivingEntity(), seed, displayContext)')
+            if ($t -match '\bItemOwner\b' -and $t -notmatch 'import\s+net\.minecraft\.world\.entity\.ItemOwner\s*;') {
+                $t = [regex]::Replace($t, '(?m)^(package\s+[^;]+;\s*)',
+                    "`$1`r`nimport net.minecraft.world.entity.ItemOwner;`r`n", 1)
+            }
+        }
+        # Entity type tag checks
+        $t = [regex]::Replace($t, '\.getType\(\)\.is\(([^)]+)\)', '.getType().builtInRegistryHolder().is($1)')
 
         # EntityTickEvent.Post.getEntity() is Entity, not LivingEntity
         $t = $t -replace 'LivingEntity animation = event\.getEntity\(\);', 'net.minecraft.world.entity.Entity animation = event.getEntity();'
@@ -2314,7 +2988,7 @@ Write-GradleScaffold -Root $OutputPath -Meta $meta -LocalLibs $LocalLibDir -DepP
 Write-Ok 'build.gradle / settings.gradle / gradle.properties / neoforge.mods.toml'
 
 Write-Step 'Mechanical Java rewrites (Forge -> NeoForge, Identifier, ticks, GeckoLib5)'
-$j = if (Test-MigrationPass $sourceProfile 'mechanical-java') { Invoke-MechanicalJavaRewrites -Root $OutputPath } else { 0 }
+$j = if (Test-MigrationPass $sourceProfile 'mechanical-java') { Invoke-MechanicalJavaRewrites -Root $OutputPath -ModId $meta.mod_id } else { 0 }
 Write-Ok "Touched $j Java file(s)"
 
 Write-Step 'Exact primer migration path (detected source -> 26.2)'
@@ -2324,6 +2998,14 @@ Write-Ok ("Applied {0} version-gated rule(s); touched {1} unit(s)" -f @($exactPr
 Write-Step 'NeoForge/Minecraft 26.2 API pass (NBT, nav, teleport, weather, colors, permissions)'
 $api = if (Test-MigrationPass $sourceProfile 'neoforge-26-api') { Invoke-NeoForge26ApiRewritePass -Root $OutputPath } else { 0 }
 Write-Ok "API-touched $api Java file(s)"
+
+Write-Step 'Optional integration exclude (Carry On / Sable / missing soft deps)'
+$optEx = Invoke-OptionalIntegrationExcludePass -Root $OutputPath
+Write-Ok "Optional-integration-excluded $optEx file(s)"
+
+Write-Step 'DFU / record / mixin Vineflower repair (RecordCodecBuilder validate accessors)'
+$dfu = Invoke-DfuCodecRepairPass -Root $OutputPath
+Write-Ok "DFU-repair-touched $dfu Java file(s)"
 
 Write-Step 'SubmitCustomGeometryEvent scaffold (world MultiBufferSource / bufferSource / ShapeRenderer)'
 $geom = Invoke-SubmitCustomGeometryPass -Root $OutputPath -Meta $meta

@@ -1,10 +1,14 @@
 using System.Diagnostics;
+using System.Reflection;
 using System.Text;
 
 namespace RB.LegacyJavaConverter;
 
 public sealed class MainForm : Form
 {
+    private static string AppVersion =>
+        Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "2.0.4";
+
     private readonly RadioButton _radProject = new() { Text = "Mode A: Project folder (Forge source with src/)", AutoSize = true, Checked = true };
     private readonly RadioButton _radJar = new() { Text = "Mode B: Finished .jar file (decompile, not decrypt)", AutoSize = true };
     private readonly Label _lblInput = new() { Text = "Input project", AutoSize = true, ForeColor = Color.Gainsboro, Anchor = AnchorStyles.Left, Margin = new Padding(0, 10, 8, 4) };
@@ -13,7 +17,7 @@ public sealed class MainForm : Form
     private readonly TextBox _txtMc = NewTextBox();
     private readonly TextBox _txtNeo = NewTextBox();
     private readonly TextBox _txtGecko = NewTextBox();
-    private readonly CheckBox _chkCompile = NewCheck("Compile after convert (optional diagnostic; failures OK)", false);
+    private readonly CheckBox _chkCompile = NewCheck("Compile after convert (build must succeed)", false);
     private readonly CheckBox _chkDry = NewCheck("Dry run (preview only — no files written)", false);
     private readonly CheckBox _chkContinueNeo = NewCheck("After decompile, also scaffold NeoForge 26.2", true);
     private readonly Label _lblOptionsHint = new()
@@ -43,7 +47,7 @@ public sealed class MainForm : Form
 
     public MainForm()
     {
-        Text = "RB Legacy Java Converter v1.5.5 — Project / JAR → NeoForge 26.2";
+        Text = $"RB Legacy Java Converter v{AppVersion} — Project / JAR → NeoForge 26.2";
         ClientSize = new Size(980, 760);
         MinimumSize = new Size(840, 640);
         StartPosition = FormStartPosition.CenterScreen;
@@ -67,7 +71,7 @@ public sealed class MainForm : Form
         header.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
         header.Controls.Add(new Label
         {
-            Text = "RB Legacy Java Converter v1.5.5 — Project or finished JAR → NeoForge 26.2",
+            Text = $"RB Legacy Java Converter v{AppVersion} — Project or finished JAR → NeoForge 26.2",
             Font = new Font("Segoe UI Semibold", 12f),
             ForeColor = Color.White,
             AutoSize = true,
@@ -749,7 +753,7 @@ public sealed class MainForm : Form
         AppendLog($"Tools : {toolsRoot}", Color.DimGray);
         AppendLog($"Script: {Path.GetFileName(script)}", Color.DimGray);
         if (_chkCompile.Checked)
-            AppendLog("Note  : Compile is diagnostic only. Scaffold success does not require a green build.", Color.Khaki);
+            AppendLog("Note  : A requested compile must produce a successful build.", Color.Khaki);
         if (_chkDry.Checked)
             AppendLog("Dry run: preview only", Color.Khaki);
         AppendLog("----------------------------------------", Color.Gray);
@@ -821,25 +825,15 @@ public sealed class MainForm : Form
             SetBusy(false);
             AppendLog("----------------------------------------", Color.Gray);
 
-            // Scaffold may succeed even if a diagnostic compile left a non-zero code
-            // (older tool scripts, or Gradle writing to stderr under PowerShell).
             var scaffoldOk = !_chkDry.Checked
                 && !string.IsNullOrWhiteSpace(_lastOutput)
                 && (File.Exists(Path.Combine(_lastOutput, "LEGACY_MIGRATION_REPORT.md"))
                     || File.Exists(Path.Combine(_lastOutput, "DECOMPILE_REPORT.md"))
                     || File.Exists(Path.Combine(_lastOutput, "build.gradle")));
 
-            if (code == 0 || scaffoldOk)
+            if (code == 0)
             {
-                if (code == 0)
-                    AppendLog("Finished successfully (exit 0).", Color.LightGreen);
-                else
-                {
-                    AppendLog($"Process exit code {code}, but output scaffold looks complete.", Color.Gold);
-                    AppendLog("Treat this as SUCCESS for Mode B (decompile/scaffold). Compile is optional.", Color.Gold);
-                    if (File.Exists(Path.Combine(_lastOutput, "compile-errors.log")))
-                        AppendLog("See compile-errors.log in the output folder for Java/API issues.", Color.Khaki);
-                }
+                AppendLog("Finished successfully (exit 0).", Color.LightGreen);
                 if (!_chkDry.Checked)
                 {
                     AppendLog("Output: " + _lastOutput, Color.LightGreen);
@@ -849,6 +843,13 @@ public sealed class MainForm : Form
             else
             {
                 AppendLog($"Failed with exit code {code}.", Color.Salmon);
+                if (scaffoldOk)
+                {
+                    AppendLog("The conversion scaffold was preserved for repair.", Color.Gold);
+                    _btnOpenOut.Enabled = true;
+                    if (File.Exists(Path.Combine(_lastOutput, "compile-errors.log")))
+                        AppendLog("See compile-errors.log for the first remaining build error.", Color.Khaki);
+                }
             }
             try { _running.Dispose(); } catch { /* ignore */ }
             _running = null;

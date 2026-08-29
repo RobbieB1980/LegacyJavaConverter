@@ -25,8 +25,19 @@ $PortableRoot = Join-Path $Dist 'portable\RB-Legacy-Java-Converter'
 $GuiProj = Join-Path $RepoRoot 'src\RB.LegacyJavaConverter\RB.LegacyJavaConverter.csproj'
 $SetupProj = Join-Path $RepoRoot 'src\RB.LegacyJavaConverter.Setup\RB.LegacyJavaConverter.Setup.csproj'
 
+function Remove-TreeLongPath([string]$Target) {
+    $resolvedTarget = [IO.Path]::GetFullPath($Target)
+    $resolvedRepo = [IO.Path]::GetFullPath([string]$RepoRoot).TrimEnd('\') + '\'
+    if (-not $resolvedTarget.StartsWith($resolvedRepo, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Refusing to remove path outside repository: $resolvedTarget"
+    }
+    if ([IO.Directory]::Exists($resolvedTarget)) {
+        [IO.Directory]::Delete('\\?\' + $resolvedTarget, $true)
+    }
+}
+
 Write-Host "==> Cleaning dist" -ForegroundColor Cyan
-if (Test-Path $Dist) { Remove-Item $Dist -Recurse -Force }
+if (Test-Path $Dist) { Remove-TreeLongPath $Dist }
 New-Item -ItemType Directory -Path $PortableRoot -Force | Out-Null
 
 Write-Host "==> Publishing GUI (self-contained $Runtime)" -ForegroundColor Cyan
@@ -84,8 +95,12 @@ if (Test-Path (Join-Path $RepoRoot 'docs')) {
 $libSrc = Join-Path $RepoRoot 'lib'
 if (Test-Path $libSrc) {
     $libDest = Join-Path $toolsFinal 'lib'
-    if (Test-Path $libDest) { Remove-Item $libDest -Recurse -Force }
-    Copy-Item $libSrc $libDest -Recurse -Force
+    if (Test-Path $libDest) { Remove-TreeLongPath $libDest }
+    New-Item -ItemType Directory -Path $libDest -Force | Out-Null
+    # Copy-Item fails at MAX_PATH for the nested solved-conversion overlays.
+    # Robocopy is long-path aware and preserves the complete portable toolset.
+    & robocopy.exe $libSrc $libDest /E /R:1 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null
+    if ($LASTEXITCODE -gt 7) { throw "tools/lib copy failed (robocopy exit $LASTEXITCODE)" }
     Write-Host "    tools/lib (SRG map + dependency catalog)"
 }
 
@@ -105,10 +120,27 @@ if (Test-Path $ico) {
     Write-Host "    app.ico (from assets)"
 }
 
+$versionFile = Join-Path $RepoRoot 'version.txt'
+if (-not (Test-Path $versionFile)) {
+    # Fall back to GUI csproj Version when version.txt is absent.
+    $guiCsproj = Join-Path $RepoRoot 'src\RB.LegacyJavaConverter\RB.LegacyJavaConverter.csproj'
+    $ver = '2.0.4'
+    if (Test-Path $guiCsproj) {
+        $m = Select-String -Path $guiCsproj -Pattern '<Version>([^<]+)</Version>' | Select-Object -First 1
+        if ($m) { $ver = $m.Matches[0].Groups[1].Value }
+    }
+    Set-Content -LiteralPath $versionFile -Value $ver -Encoding ascii
+}
+Copy-Item $versionFile (Join-Path $PortableRoot 'version.txt') -Force
+Write-Host "    version.txt = $((Get-Content -LiteralPath (Join-Path $PortableRoot 'version.txt') -Raw).Trim())"
+
 Write-Host "==> Creating portable ZIP" -ForegroundColor Cyan
 $portableZip = Join-Path $Dist 'RB-Legacy-Java-Converter-Portable.zip'
 if (Test-Path $portableZip) { Remove-Item $portableZip -Force }
-Compress-Archive -Path (Join-Path $Dist 'portable\RB-Legacy-Java-Converter') -DestinationPath $portableZip -Force
+# Compress-Archive enumerates through legacy MAX_PATH APIs. Windows bsdtar is
+# long-path aware and retains the deeply nested semantic overlay sources.
+& tar.exe -a -c -f $portableZip -C (Join-Path $Dist 'portable') 'RB-Legacy-Java-Converter'
+if ($LASTEXITCODE -ne 0 -or -not (Test-Path $portableZip)) { throw 'Portable ZIP creation failed' }
 
 $payloadZip = Join-Path $Dist 'portable-payload.zip'
 Copy-Item $portableZip $payloadZip -Force

@@ -83,7 +83,7 @@ The converter now auto-detects the source loader/version and inventories legacy 
 | `-OutputPath` | Empty output folder (required) |
 | `-Compile` | Run the complete `gradlew build`; success requires an installable JAR in `build/libs` |
 | `-DryRun` | Preview only — no files written |
-| `-NeoVersion` | Default `26.2.0.66` |
+| `-NeoVersion` | Default `26.2.0.72` |
 | `-GeckoLibVersion` | Default `5.5.3` |
 
 After conversion:
@@ -92,6 +92,13 @@ After conversion:
 cd "D:\mods\MyForgeMod-26.2"
 .\gradlew.bat compileJava --stacktrace
 .\gradlew.bat build
+```
+
+Converter regression checks:
+
+```powershell
+.\tests\Run-RegressionTests.ps1
+dotnet build RB.LegacyJavaConverter.slnx
 ```
 
 A `LEGACY_MIGRATION_REPORT.md` is written in the output folder.

@@ -11,11 +11,14 @@ The result is written to `SOURCE_PROFILE.json`. It contains the detected source 
 
 The selected path is cumulative. For example, a detected 1.21.1 input receives the rules attached to every transition after 1.21.1, while a 1.21.11 input skips rules for APIs already changed in earlier releases. Shared mechanical rules remain general; narrowly semantic replacements live in version-and-mod-specific overlays and only run after both identities match.
 
+Patch routing is explicit. Supported 1.20.1–1.20.6 and 1.21.0–1.21.11 inputs resolve to a named primer node; 22.x–26.1 receive only the final 26.1→26.2 delta, and every 26.2 patch build receives no historical primer rules. Unknown versions receive no exact-version semantic rules instead of replaying the full chain.
+
 ## Cumulative routes
 
 | Detected input | Route | Intended migration |
 |---|---|---|
 | Forge 1.20.1 | `forge-1.20.1` | Full SRG/Forge/API/MCreator chain to 26.2 |
+| Forge 1.20.2–1.20.4 | `forge-1.20.2-1.20.4` | Forge/API/MCreator chain without the 1.20.1-only SRG map |
 | NeoForge 1.21.x | `neoforge-1.21.x` | 1.21-era API and MCreator passes, then 26.2 passes |
 | NeoForge 22.x–25.x | `neoforge-22-to-25` | Common feature-driven 26.2 passes |
 | NeoForge 26.0–26.1 | `neoforge-26.0-26.1` | Common 26.2 delta; skips old MCreator residue passes |

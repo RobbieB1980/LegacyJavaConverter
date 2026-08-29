@@ -3,13 +3,13 @@
   Create/update a GitHub Release and upload portable + setup artifacts from dist/.
 
 .EXAMPLE
-  .\scripts\Publish-GitHubRelease.ps1 -Tag v1.4.2
+  .\scripts\Publish-GitHubRelease.ps1 -Tag v2.0.4
 #>
 [CmdletBinding()]
 param(
-    [string]$Tag = 'v1.5.5',
+    [string]$Tag = 'v2.0.4',
     [string]$Repo = 'RobbieB1980/LegacyJavaConverter',
-    [string]$Name = 'RB Legacy Java Converter 1.5.5'
+    [string]$Name = 'RB Legacy Java Converter 2.0.4'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -68,15 +68,13 @@ Converts **Forge/NeoForge 1.20.1–26.1** (and decompiled jars) → **NeoForge 2
 | ``RB-Legacy-Java-Converter-Setup.exe`` | Windows installer (self-contained; **embeds** portable toolset only) |
 | ``RB-Legacy-Java-Converter-Portable.zip`` | No install — extract and run ``Start-Converter.bat`` or the EXE |
 
-### What's new in 1.5.5
+### What's new in 2.0.4
 
-- GUI + converter default NeoForge version **26.2.0.72**
-- Station MDK preferred for Gradle wrapper: ``Neoforge26.2generatortemplate``
-- ``SolvedConversionIndex.json`` auto-matches completed conversions (Nextgen, Friend, TOWW, Knocker, MOAdecor, …)
-- Semantic overlays (Nextgen 1.21.1, Knocker 1.21.8) + exact primer rules
-- Registry fix: custom ``Supplier`` ``registerBlock`` → ``Function<Properties,T>`` (``Block id not set``)
-- Installer ignores sibling portable ZIPs; uses embedded payload only
-- Fusion official Modrinth/dep-cache path
+- **GUI/Setup version bump to 2.0.4** (was still showing 1.5.5 in window titles)
+- **CASE-004 MedSystem** Mode B green-build fix: rebuilt ``lib/overlays/medsystem/1.21.1.zip`` from the proven green tree (previous zip reintroduced broken DFU/oracle sources after repair)
+- Overlay ``DELETE.txt`` removes soft-dep Integration classes, Vineflower util leftovers, broken client shaders, and non-compiling debug mixins
+- Soft-dep exclude also matches ``integration/carryon|sable|jei|appleskin`` paths (not only hard imports)
+- Includes Mel 2.0.x API wave + DFU/record/mixin repair band from 2.0.0–2.0.3
 
 ### Requirements
 
@@ -89,6 +87,7 @@ Converts **Forge/NeoForge 1.20.1–26.1** (and decompiled jars) → **NeoForge 2
 - Original input is never modified (always writes to output folder).
 - Setup installs under ``%LOCALAPPDATA%\RB-Legacy-Java-Converter`` by default (no admin required).
 - Detect source version → primer path → solved overlays/passes → ``gradlew build`` for installable jars.
+- Prefer official 26.2 mod jars when published; converter path is for when they are absent.
 "@
 
 Write-Host "==> Checking for existing release $Tag" -ForegroundColor Cyan
@@ -151,4 +150,4 @@ Upload-Asset $setup
 Upload-Asset $portable
 
 Write-Host ""
-Write-Host "Release published: https://github.com/$Repo/releases/tag/$Tag" -ForegroundColor Green
+Write-Host "Published: https://github.com/$Repo/releases/tag/$Tag" -ForegroundColor Green

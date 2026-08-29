@@ -35,7 +35,28 @@ function Convert-LevelClientSideAccess([string]$Text) {
     return $Text
 }
 
-function Convert-NeoForge262ApiMoves([string]$Text) {
+function Get-Legacy262CompatPackage {
+    <#
+    .SYNOPSIS
+      JPMS-safe package for the mechanical Legacy262Compat bridge.
+      Must be unique per mod: two converted jars exporting the same package
+      fail module resolution (ResolutionException / split package).
+    #>
+    param([AllowEmptyString()][string]$ModId = '')
+    $seg = ([string]$ModId).Trim().ToLowerInvariant() -replace '[^a-z0-9_]', '_'
+    if ([string]::IsNullOrWhiteSpace($seg)) { $seg = 'shared' }
+    if ($seg -match '^[0-9]') { $seg = "m_$seg" }
+    return "rb.legacy.converter.compat.$seg"
+}
+
+function Convert-NeoForge262ApiMoves {
+    param(
+        [string]$Text,
+        [AllowEmptyString()][string]$ModId = ''
+    )
+    $compatPkg = Get-Legacy262CompatPackage -ModId $ModId
+    $compatFqcn = "$compatPkg.Legacy262Compat"
+
     # Mojang package reorganisations between the 1.21.x primer and 26.2.
     $Text = $Text.Replace(
         'net.minecraft.client.renderer.block.model.VariantMutator',
@@ -72,12 +93,15 @@ function Convert-NeoForge262ApiMoves([string]$Text) {
         $Text = [regex]::Replace($Text, 'modEventBus\.addListener\(\s*e\s*->', 'modEventBus.addListener((net.neoforged.neoforge.client.event.ModelEvent.RegisterStandalone e) ->', 1)
     }
 
+    # Rewrite any prior shared FQCN before inserting new references.
+    $Text = $Text.Replace('rb.legacy.converter.compat.Legacy262Compat', $compatFqcn)
+
     # Renderer submission now consumes model parts and tint arrays.
     $Text = [regex]::Replace($Text,
         'submitBlockModel\(\s*([^,]+),\s*([^,]+),\s*(.+?),\s*1\.0F,\s*1\.0F,\s*1\.0F,\s*([^,]+),\s*([^,]+),\s*([^\)]+)\)',
-        'submitBlockModel($1, $2, rb.legacy.converter.compat.Legacy262Compat.modelParts($3), new int[0], $4, $5, $6)',
+        "submitBlockModel(`$1, `$2, $compatFqcn.modelParts(`$3), new int[0], `$4, `$5, `$6)",
         'Singleline')
-    $Text = $Text.Replace('_bs.setValue(_property, entry.value())', 'rb.legacy.converter.compat.Legacy262Compat.copyValue(_bs, entry)')
+    $Text = $Text.Replace('_bs.setValue(_property, entry.value())', "$compatFqcn.copyValue(_bs, entry)")
     return $Text
 }
 
@@ -101,7 +125,9 @@ function Convert-ColorCollectionConstants([string]$Text) {
             $Text = $Text.Replace("Blocks.${color}_$($group.Suffix)", "Blocks.$($group.Collection).$($colors[$color])()")
         }
     }
-    return $Text.Replace('Blocks.CHAIN', 'Blocks.IRON_CHAIN').Replace('Items.CHAIN', 'Items.IRON_CHAIN')
+    $Text = [regex]::Replace($Text, '\bBlocks\.CHAIN\b', 'Blocks.IRON_CHAIN')
+    $Text = [regex]::Replace($Text, '\bItems\.CHAIN\b', 'Items.IRON_CHAIN')
+    return $Text
 }
 
 function Get-MigrationRoute {
@@ -446,6 +472,7 @@ function Apply-SolvedConversionOverlays {
             $overlayRel = [string]$ov.path
             if (-not $overlayRel) { continue }
             # ToolRoot is the converter tools/repo root (contains Convert-*.ps1 and lib/).
+            # Overlay may be a directory or a .zip (zip avoids Windows MAX_PATH in installers).
             $overlayPath = Join-Path $ToolRoot (Join-Path 'lib\overlays' ($overlayRel -replace '/', '\'))
             if (-not (Test-Path -LiteralPath $overlayPath) -and (Split-Path $ToolRoot -Leaf) -eq 'lib') {
                 $overlayPath = Join-Path $ToolRoot (Join-Path 'overlays' ($overlayRel -replace '/', '\'))
@@ -462,12 +489,43 @@ function Apply-SolvedConversionOverlays {
             }
             if (-not $ok) { continue }
 
-            foreach ($file in @(Get-ChildItem -LiteralPath $overlayPath -Recurse -File -ErrorAction SilentlyContinue)) {
-                $relative = $file.FullName.Substring($overlayPath.Length).TrimStart('\', '/')
-                Copy-FileLongPath -Source $file.FullName -Destination (Join-Path $Root $relative)
-                $touched++
+            $overlayWork = $overlayPath
+            $tempExtract = $null
+            if ($overlayPath -like '*.zip') {
+                $tempExtract = Join-Path ([IO.Path]::GetTempPath()) ('rb-overlay-' + [guid]::NewGuid().ToString('N'))
+                New-Item -ItemType Directory -Path $tempExtract -Force | Out-Null
+                Add-Type -AssemblyName System.IO.Compression.FileSystem
+                [System.IO.Compression.ZipFile]::ExtractToDirectory($overlayPath, $tempExtract)
+                $overlayWork = $tempExtract
             }
-            $appliedOverlays.Add($overlayRel) | Out-Null
+
+            try {
+                $deleteList = Join-Path $overlayWork 'DELETE.txt'
+                if (Test-Path -LiteralPath $deleteList) {
+                    foreach ($line in @(Get-Content -LiteralPath $deleteList -ErrorAction SilentlyContinue)) {
+                        $relDel = ([string]$line).Trim()
+                        if (-not $relDel -or $relDel.StartsWith('#')) { continue }
+                        $target = Join-Path $Root ($relDel -replace '/', [IO.Path]::DirectorySeparatorChar)
+                        if (Test-Path -LiteralPath $target) {
+                            Remove-Item -LiteralPath $target -Force -ErrorAction SilentlyContinue
+                            $touched++
+                        }
+                    }
+                }
+
+                foreach ($file in @(Get-ChildItem -LiteralPath $overlayWork -Recurse -File -ErrorAction SilentlyContinue)) {
+                    if ($file.Name -eq 'DELETE.txt') { continue }
+                    $relative = $file.FullName.Substring($overlayWork.Length).TrimStart('\', '/')
+                    Copy-FileLongPath -Source $file.FullName -Destination (Join-Path $Root $relative)
+                    $touched++
+                }
+                $appliedOverlays.Add($overlayRel) | Out-Null
+            }
+            finally {
+                if ($tempExtract -and (Test-Path -LiteralPath $tempExtract)) {
+                    Remove-Item -LiteralPath $tempExtract -Recurse -Force -ErrorAction SilentlyContinue
+                }
+            }
         }
     }
     return [pscustomobject]@{ Touched = $touched; Overlays = @($appliedOverlays) }
@@ -485,7 +543,7 @@ function Write-PrimerQuickReference {
     $lines.Add('This is a condensed change index, not a replacement for the linked official primers. Only transitions after the detected source are included.') | Out-Null
     foreach ($step in $chain) {
         $lines.Add('') | Out-Null
-        $lines.Add("## $($step.from) → $($step.to)") | Out-Null
+        $lines.Add("## $($step.from) â†’ $($step.to)") | Out-Null
         $lines.Add('') | Out-Null
         $sourceLabel = if ($step.sourceType -eq 'official-primer') { "[Official primer]($($step.officialPrimer))" } else { 'Converter-maintained bridge (no official primer published for this interval)' }
         $lines.Add("Source: $sourceLabel") | Out-Null
