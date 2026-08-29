@@ -840,8 +840,25 @@ function Invoke-NeoForge26ApiRewritePass {
         # --- FML dist accessor ---
         $t = $t -replace 'FMLEnvironment\.dist\b', 'FMLEnvironment.getDist()'
 
-        # --- DeferredRegister items: registerItem(name, fn, new Properties()) no longer matches ---
-        $t = $t -replace '\.registerItem\(([^,]+),\s*([^,]+),\s*new\s+(?:Item\.)?Properties\(\)\s*\)', '.registerItem($1, $2)'
+        # --- DeferredRegister items: registerItem(name, fn, new Properties()) ---
+        # 26.2 overloads take Function + optional Supplier/UnaryOperator, not a raw Properties instance.
+        # Drop trailing `new Item.Properties()` / `new Properties()` even when the factory lambda contains commas
+        # (e.g. props -> new BlockItem(block.get(), props), new Item.Properties()).
+        $t = [regex]::Replace($t,
+            '(\.registerItem\([^;]*?),\s*new\s+(?:Item\.)?Properties\(\)(\s*\))',
+            '$1$2')
+        # Also wrap a trailing bare Properties variable: registerItem(name, fn, properties) -> ..., () -> properties)
+        # (skip when already a supplier/operator, and skip the lambda param named prop).
+        $t = [regex]::Replace($t,
+            '(?m)(\.registerItem\([^\n]+,\s*(?:prop|props)\s*->\s*new\s+BlockItem\([^\n]+,\s*(?:prop|props)\))\s*,\s*(\w+)\s*\)\s*;',
+            {
+                param($m)
+                $head = $m.Groups[1].Value
+                $props = $m.Groups[2].Value
+                if ($props -eq 'prop' -or $props -eq 'props') { return $m.Value }
+                if ($m.Value -match ',\s*\(\)\s*->') { return $m.Value }
+                "$head, () -> $props);"
+            })
 
         # --- SpawnEggItem(EntityType, Properties) -> Properties + ENTITY_DATA component (26.x) ---
         $t = [regex]::Replace($t,
@@ -865,8 +882,12 @@ function Invoke-NeoForge26ApiRewritePass {
         # Entity/layer MultiBufferSource -> SubmitNodeCollector is valid (glow overlays, armor layers).
         # World-draw MultiBufferSource / .bufferSource() is NOT a rename: use SubmitCustomGeometryEvent
         # + submitShapeOutline (see Invoke-SubmitCustomGeometryPass). Naive rename breaks world geometry.
-        $isWorldDraw = $t -match '\.bufferSource\s*\(|\bRenderLevelStageEvent\b|\bShapeRenderer\b|LevelRenderer\.renderLineBox|MultiBufferSource\.BufferSource'
+        $isWorldDraw = $t -match '\.bufferSource\s*\(|\bRenderLevelStageEvent\b|\bShapeRenderer\b|LevelRenderer\.renderLineBox|MultiBufferSource\.BufferSource|TODO 26\.2 SubmitCustomGeometryEvent|TODO 26\.2: SubmitCustomGeometryEvent'
         $isEntitySubmit = $t -match 'extends\s+RenderLayer\b|RenderLayer\s*<|LivingEntityRenderer|EntityRenderer\s*<|HumanoidArmorLayer|GeoEntityRenderer|GeoRenderer'
+
+        # RenderLayer moved to entity.layers in modern mappings / 26.2 (Knocker-proven import).
+        $t = $t -replace 'import\s+net\.minecraft\.client\.renderer\.entity\.RenderLayer\s*;',
+            'import net.minecraft.client.renderer.entity.layers.RenderLayer;'
 
         $t = $t -replace 'import\s+net\.minecraft\.client\.renderer\.RenderType\s*;',
             'import net.minecraft.client.renderer.rendertype.RenderTypes;'
@@ -891,6 +912,28 @@ function Invoke-NeoForge26ApiRewritePass {
             $t = [regex]::Replace($t,
                 'VertexConsumer\s+\w+\s*=\s*(\w+)\.getBuffer\(\s*RenderTypes\.eyes\(([^;]+?)\)\s*\)\s*;\s*(?:\(\(HumanoidModel\)this\.getParentModel\(\)\)|this\.getParentModel\(\))\s*\.renderToBuffer\(\s*(\w+)\s*,\s*\w+\s*,\s*(\w+)\s*,\s*LivingEntityRenderer\.getOverlayCoords\((\w+)\s*,\s*[^)]+\)\s*\)\s*;',
                 '$1.order(0).submitModel(this.getParentModel(), $5, $3, RenderTypes.eyes($2), $4, LivingEntityRenderer.getOverlayCoords($5, 0.0F), -1, null, $5.outlineColor, null);')
+
+            # 26.2 RenderLayer is RenderLayer<S extends EntityRenderState, M extends EntityModel<? super S>>.
+            # Rewrite common Entity-typed layer declarations to LivingEntityRenderState + 6-arg submit.
+            if ($t -match 'extends\s+RenderLayer\s*<\s*T\s*,\s*M\s*>' -and $t -match 'T\s+extends\s+Entity') {
+                $t = [regex]::Replace($t,
+                    'class\s+(\w+)\s*<\s*T\s+extends\s+Entity\s*,\s*M\s+extends\s+EntityModel\s*<\s*T\s*>\s*>\s*extends\s+RenderLayer\s*<\s*T\s*,\s*M\s*>',
+                    'class $1<S extends net.minecraft.client.renderer.entity.state.LivingEntityRenderState, M extends EntityModel<? super S>> extends RenderLayer<S, M>')
+                $t = $t -replace 'RenderLayerParent\s*<\s*T\s*,\s*M\s*>', 'RenderLayerParent<S, M>'
+                # Old living-layer submit/render arity (entity + 6 floats) -> state + yRot/xRot
+                $t = [regex]::Replace($t,
+                    'public\s+void\s+submit\s*\(\s*PoseStack\s+(\w+)\s*,\s*SubmitNodeCollector\s+(\w+)\s*,\s*int\s+(\w+)\s*,\s*T\s+\w+\s*,\s*float\s+\w+\s*,\s*float\s+\w+\s*,\s*float\s+\w+\s*,\s*float\s+\w+\s*,\s*float\s+(\w+)\s*,\s*float\s+(\w+)\s*\)',
+                    ("@Override" + [Environment]::NewLine + "    public void submit(PoseStack `$1, SubmitNodeCollector `$2, int `$3, S state, float `$4, float `$5)"))
+                if ($t -match 'LivingEntityRenderState' -and $t -notmatch 'import\s+net\.minecraft\.client\.renderer\.entity\.state\.LivingEntityRenderState\s*;') {
+                    $t = $t -replace 'import\s+net\.minecraft\.client\.renderer\.entity\.layers\.RenderLayer\s*;',
+                        ("import net.minecraft.client.renderer.entity.layers.RenderLayer;" + [Environment]::NewLine + "import net.minecraft.client.renderer.entity.state.LivingEntityRenderState;")
+                }
+                # Drop unused Entity import when body no longer references Entity (ignore import lines).
+                $layerBody = [regex]::Replace($t, '(?m)^\s*import\s+.*$', '')
+                if ($layerBody -notmatch '(?<![\w.])Entity(?!Model|RenderState|Renderer)\b') {
+                    $t = $t -replace 'import\s+net\.minecraft\.world\.entity\.Entity\s*;\s*\r?\n', ''
+                }
+            }
         }
 
         if ($isWorldDraw) {
@@ -905,6 +948,55 @@ function Invoke-NeoForge26ApiRewritePass {
                 '$1// TODO 26.2 submitShapeOutline (was ShapeRenderer): $2')
             $t = [regex]::Replace($t, '(?m)^(\s*)(.*LevelRenderer\.renderLineBox[^;]*;)\s*$',
                 '$1// TODO 26.2 submitShapeOutline (was LevelRenderer.renderLineBox): $2')
+            # Leftover endBatch after bufferSource was commented out.
+            $t = [regex]::Replace($t, '(?m)^(\s*)(.*\bendBatch\s*\(\s*\)\s*;)\s*$',
+                '$1// TODO 26.2 SubmitCustomGeometryEvent (was endBatch): $2')
+            # Drop now-unused imports that only served immediate-buffer world drawing.
+            # Ignore import lines and // comments (TODOs still mention the old symbols).
+            $bodyOnly = [regex]::Replace($t, '(?m)^\s*import\s+.*$', '')
+            $bodyOnly = [regex]::Replace($bodyOnly, '(?m)^\s*//.*$', '')
+            if ($bodyOnly -notmatch '\bMultiBufferSource\b' -and $bodyOnly -notmatch '\.bufferSource\s*\(') {
+                $t = $t -replace 'import\s+net\.minecraft\.client\.renderer\.MultiBufferSource\s*;\s*\r?\n', ''
+            }
+            if ($bodyOnly -notmatch '\bShapeRenderer\b') {
+                $t = $t -replace 'import\s+net\.minecraft\.client\.renderer\.ShapeRenderer\s*;\s*\r?\n', ''
+            }
+            # Minecraft import often only used for renderBuffers().bufferSource() in these files.
+            if ($bodyOnly -notmatch '\bMinecraft\b') {
+                $t = $t -replace 'import\s+net\.minecraft\.client\.Minecraft\s*;\s*\r?\n', ''
+            }
+            # Shapes import may only remain for commented ShapeRenderer lines.
+            if ($bodyOnly -notmatch '\bShapes\b') {
+                $t = $t -replace 'import\s+net\.minecraft\.world\.phys\.shapes\.Shapes\s*;\s*\r?\n', ''
+            }
+
+            # 26.2: RenderLevelStageEvent no longer has getStage()/Stage enum — use typed subclasses.
+            # Prefer SubmitCustomGeometryEvent for custom geometry; still rewrite stage filters so handlers compile.
+            $stageMap = [ordered]@{
+                'AFTER_SKY'                   = 'AfterSky'
+                'AFTER_SOLID_BLOCKS'          = 'AfterOpaqueBlocks'
+                'AFTER_OPAQUE_BLOCKS'         = 'AfterOpaqueBlocks'
+                'AFTER_CUTOUT_BLOCKS'         = 'AfterOpaqueBlocks'
+                'AFTER_CUTOUT_MIPPED_BLOCKS'  = 'AfterOpaqueBlocks'
+                'AFTER_ENTITIES'              = 'AfterOpaqueFeatures'
+                'AFTER_BLOCK_ENTITIES'        = 'AfterOpaqueFeatures'
+                'AFTER_TRANSLUCENT_BLOCKS'    = 'AfterTranslucentBlocks'
+                'AFTER_PARTICLES'             = 'AfterTranslucentParticles'
+                'AFTER_WEATHER'               = 'AfterWeather'
+                'AFTER_LEVEL'                 = 'AfterLevel'
+            }
+            foreach ($oldStage in $stageMap.Keys) {
+                $newStage = $stageMap[$oldStage]
+                # Rewrite method signature + drop the stage guard when present.
+                $t = [regex]::Replace($t,
+                    ("(?s)(public\s+static\s+void\s+\w+\s*\(\s*)RenderLevelStageEvent(\s+\w+\s*\)\s*\{)\s*" +
+                     "if\s*\(\s*\w+\.getStage\(\)\s*!=\s*RenderLevelStageEvent\.Stage\.$oldStage\s*\)\s*\{\s*return\s*;\s*\}"),
+                    "`$1RenderLevelStageEvent.$newStage`$2")
+                $t = [regex]::Replace($t,
+                    ("(?s)(public\s+static\s+void\s+\w+\s*\(\s*)RenderLevelStageEvent(\s+\w+\s*\)\s*\{)\s*" +
+                     "if\s*\(\s*\w+\.getStage\(\)\s*!=\s*RenderLevelStageEvent\.Stage\.$oldStage\s*\)\s*return\s*;"),
+                    "`$1RenderLevelStageEvent.$newStage`$2")
+            }
         }
 
         # PlayerSkin.texture() -> body().texturePath()
@@ -914,6 +1006,10 @@ function Invoke-NeoForge26ApiRewritePass {
         $t = $t -replace 'import\s+net\.neoforged\.neoforge\.capabilities\.Capabilities\.ItemHandler\s*;\s*', ''
         $t = $t -replace '(?m)^(\s*)event\.registerBlockEntity\(\s*ItemHandler\.BLOCK\s*,.+$',
             '$1// TODO 26.2: item handler capability moved to Capabilities.Item + transfer API (registerBlockEntity removed by converter)'
+        # Drop unused SidedInvWrapper import when the only use was the removed ItemHandler.BLOCK registration.
+        if ($t -match 'TODO 26\.2: item handler capability' -and $t -notmatch '(?m)^\s*[^/\s].*\bSidedInvWrapper\b') {
+            $t = $t -replace 'import\s+net\.neoforged\.neoforge\.items\.wrapper\.SidedInvWrapper\s*;\s*\r?\n', ''
+        }
 
         # --- Effects / entity packages ---
         $t = $t -replace 'MobEffects\.MOVEMENT_SPEED', 'MobEffects.SPEED'

@@ -3,13 +3,13 @@
   Create/update a GitHub Release and upload portable + setup artifacts from dist/.
 
 .EXAMPLE
-  .\scripts\Publish-GitHubRelease.ps1 -Tag v1.4.1
+  .\scripts\Publish-GitHubRelease.ps1 -Tag v1.4.2
 #>
 [CmdletBinding()]
 param(
-    [string]$Tag = 'v1.4.1',
+    [string]$Tag = 'v1.4.2',
     [string]$Repo = 'RobbieB1980/LegacyJavaConverter',
-    [string]$Name = 'RB Legacy Java Converter 1.4.1'
+    [string]$Name = 'RB Legacy Java Converter 1.4.2'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -68,7 +68,7 @@ Experimental converter: **Forge 1.20.1** / decompiled **NeoForge 1.21.x (MCreato
 | ``RB-Legacy-Java-Converter-Setup.exe`` | Windows installer (self-contained; embeds portable toolset) |
 | ``RB-Legacy-Java-Converter-Portable.zip`` | No install - extract and run ``Start-Converter.bat`` or the EXE |
 
-### What's new in 1.4.1
+### What's new in 1.4.2
 
 - **SubmitCustomGeometry pass:** stop naive world-draw ``MultiBufferSource`` → ``SubmitNodeCollector`` renames
 - Entity/layer path unchanged (``submit`` / glow / armor)

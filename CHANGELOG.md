@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.4.2 — 2026-08-29
+
+### MockMod 1.21.1 → 26.2 compile lessons
+- **registerItem:** strip trailing `new Item.Properties()` even when the item factory lambda contains commas (`props -> new BlockItem(..., props), new Item.Properties()`).
+- **World-draw cleanup:** comment leftover `endBatch()`; drop unused `MultiBufferSource` / `ShapeRenderer` imports after bufferSource annotation.
+- **RenderLevelStageEvent:** rewrite `getStage() != Stage.AFTER_*` guards to typed subclasses (`AfterTranslucentBlocks`, `AfterSky`, …) — Stage enum is gone in 26.2.
+- **RenderLayer import:** `net.minecraft.client.renderer.entity.RenderLayer` → `...entity.layers.RenderLayer`.
+
+Proven against local mock project `MockMod-1.21.1` → `MockMod-26.2` reconvert.
+
+### Packaging
+- GUI / Setup / portable package **1.4.2**
+
 ## 1.4.1 — 2026-08-29
 
 ### SubmitCustomGeometry / world MultiBufferSource
