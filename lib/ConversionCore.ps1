@@ -554,6 +554,450 @@ function Write-PrimerQuickReference {
     return $chain.Count
 }
 
+function Get-StationKnowledgeRoot {
+    [CmdletBinding()]
+    param([string]$Override = '')
+    if ($Override -and (Test-Path -LiteralPath $Override)) {
+        return (Resolve-Path -LiteralPath $Override).Path
+    }
+    foreach ($candidate in @(
+            $env:RBLOCAL_LLM_KNOWLEDGE,
+            'C:\rmblocal_llm\knowledge'
+        )) {
+        if ($candidate -and (Test-Path -LiteralPath $candidate)) {
+            return (Resolve-Path -LiteralPath $candidate).Path
+        }
+    }
+    return $null
+}
+
+function Get-BundledPrimerChangesRoot {
+    return (Join-Path $PSScriptRoot 'primer_changes')
+}
+
+function Get-BundledDepChangesRoot {
+    return (Join-Path $PSScriptRoot 'dep_changes')
+}
+
+function ConvertTo-VersionRank {
+    param([string]$Version)
+    $t = ConvertTo-NormalizedMinecraftVersion $Version
+    if (-not $t) { $t = $Version }
+    if ($t -notmatch '^\d+(\.\d+)*$') { return $null }
+    $parts = @($t.Split('.') | ForEach-Object { [int]$_ })
+    while ($parts.Count -lt 4) { $parts += 0 }
+    return [int64]($parts[0] * 1000000000L + $parts[1] * 1000000L + $parts[2] * 1000L + $parts[3])
+}
+
+function Get-NearestPrimerChangesStub {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$SourceVersion,
+        [string]$TargetVersion = '26.2',
+        [Parameter(Mandatory)][string]$SearchRoot
+    )
+    if (-not (Test-Path -LiteralPath $SearchRoot)) { return $null }
+    $sourceRank = ConvertTo-VersionRank $SourceVersion
+    $exact = Join-Path $SearchRoot ("primer_changes_{0}-to-{1}.md" -f $SourceVersion, $TargetVersion)
+    if (Test-Path -LiteralPath $exact) {
+        return [pscustomobject]@{ IndexPath = $exact; MatchKind = 'exact'; StubSource = $SourceVersion }
+    }
+    $best = $null
+    $bestRank = $null
+    foreach ($file in @(Get-ChildItem -LiteralPath $SearchRoot -Filter ("primer_changes_*-to-{0}.md" -f $TargetVersion) -File -ErrorAction SilentlyContinue)) {
+        if ($file.BaseName -notmatch '^primer_changes_(.+)-to-') { continue }
+        $stubSource = $Matches[1]
+        $rank = ConvertTo-VersionRank $stubSource
+        if ($null -eq $sourceRank -or $null -eq $rank) { continue }
+        if ($rank -gt $sourceRank) { continue } # never pick a newer source stub
+        if ($null -eq $bestRank -or $rank -gt $bestRank) {
+            $bestRank = $rank
+            $best = [pscustomobject]@{ IndexPath = $file.FullName; MatchKind = 'nearest-older'; StubSource = $stubSource }
+        }
+    }
+    return $best
+}
+
+function Resolve-PrimerChangesLedger {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$SourceVersion,
+        [string]$TargetVersion = '26.2',
+        [string]$StationKnowledgeRoot = (Get-StationKnowledgeRoot)
+    )
+    $stationBase = $null
+    if ($StationKnowledgeRoot) {
+        $stationBase = Join-Path $StationKnowledgeRoot ("NeoForge_Primers\{0}" -f $TargetVersion)
+    }
+    $bundledRoot = Get-BundledPrimerChangesRoot
+
+    $pick = $null
+    $ledgerSource = 'missing'
+    if ($stationBase -and (Test-Path -LiteralPath $stationBase)) {
+        $pick = Get-NearestPrimerChangesStub -SourceVersion $SourceVersion -TargetVersion $TargetVersion -SearchRoot $stationBase
+        if ($pick) { $ledgerSource = 'station' }
+    }
+    if (-not $pick) {
+        $pick = Get-NearestPrimerChangesStub -SourceVersion $SourceVersion -TargetVersion $TargetVersion -SearchRoot $bundledRoot
+        if ($pick) { $ledgerSource = 'bundled' }
+    }
+
+    $indexPath = if ($pick) { [string]$pick.IndexPath } else { $null }
+    $shardDir = $null
+    $primerChain = @()
+    if ($indexPath) {
+        $candidateShards = [IO.Path]::Combine([IO.Path]::GetDirectoryName($indexPath), [IO.Path]::GetFileNameWithoutExtension($indexPath))
+        if (Test-Path -LiteralPath $candidateShards) { $shardDir = $candidateShards }
+        $indexText = Get-Content -LiteralPath $indexPath -Raw -Encoding utf8 -ErrorAction SilentlyContinue
+        $chainLine = @($indexText -split "`r?`n" | Where-Object { $_ -match '^- Chain:' } | Select-Object -First 1)
+        if ($chainLine) {
+            $chainBody = [string]$chainLine
+            $chainBody = $chainBody -replace '^- Chain:\s*', ''
+            $chainBody = $chainBody.Trim().Trim([char]0x60) # strip surrounding backticks
+            # Prefer extracting version tokens so UTF-8 arrows / mojibake cannot break the split.
+            $primerChain = @(
+                [regex]::Matches($chainBody, '\b(?:1\.\d+(?:\.\d+)?|2[0-9](?:\.\d+)?)\b') |
+                    ForEach-Object { $_.Value } |
+                    Select-Object -Unique
+            )
+            if ($primerChain.Count -eq 0) {
+                $arrow = [string][char]0x2192
+                $chainBody = $chainBody.Replace($arrow, '|').Replace('->', '|')
+                $primerChain = @(
+                    $chainBody.Split('|') |
+                        ForEach-Object { $_.Trim().Trim([char]0x60) } |
+                        Where-Object { $_ }
+                )
+            }
+        }
+    }
+
+    $matchKind = 'none'
+    $stubSourceValue = $null
+    if ($pick) {
+        $matchKind = [string]$pick.MatchKind
+        $stubSourceValue = $pick.StubSource
+    }
+    return [pscustomobject]@{
+        IndexPath     = $indexPath
+        ShardDir      = $shardDir
+        LedgerSource  = $ledgerSource
+        MatchKind     = $matchKind
+        StubSource    = $stubSourceValue
+        PrimerChain   = $primerChain
+        TargetVersion = $TargetVersion
+        SourceVersion = $SourceVersion
+    }
+}
+
+function Get-DetectedHardDepSignals {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]$Profile,
+        [object[]]$DependencyRecords = @()
+    )
+    $features = @($Profile.ApiFeatures) | ForEach-Object { [string]$_ }
+    $framework = [string]$Profile.Framework
+    $geckolib = $false
+    $mcreator = $false
+    if ($features -contains 'legacy-geckolib' -or $features -contains 'geckolib') { $geckolib = $true }
+    if ($features -contains 'mcreator-source' -or $framework -eq 'mcreator') { $mcreator = $true }
+    foreach ($rec in @($DependencyRecords)) {
+        $id = [string]$rec.ModId
+        if ($id -match '^(geckolib|geckolib3|geckolib4)$') { $geckolib = $true }
+    }
+    # RecommendedPasses can also signal intent
+    foreach ($pass in @($Profile.RecommendedPasses)) {
+        if ($pass -eq 'geckolib') { $geckolib = $true }
+        if ($pass -like 'mcreator-*') { $mcreator = $true }
+    }
+    return [pscustomobject]@{
+        GeckoLib = [bool]$geckolib
+        MCreator = [bool]$mcreator
+    }
+}
+
+function Resolve-DependencyChangeLedger {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][ValidateSet('geckolib', 'mcreator')][string]$Track,
+        [string]$SourceVersion = ''
+    )
+    $root = Get-BundledDepChangesRoot
+    $trackRoot = Join-Path $root $Track
+    if (-not (Test-Path -LiteralPath $trackRoot)) {
+        return [pscustomobject]@{ Track = $Track; LedgerSource = 'missing'; IndexPath = $null; Files = @(); Band = $null }
+    }
+    $indexPath = Join-Path $trackRoot 'index.md'
+    $files = New-Object System.Collections.Generic.List[string]
+    if (Test-Path -LiteralPath $indexPath) { $files.Add($indexPath) | Out-Null }
+    $band = $null
+    if ($Track -eq 'geckolib') {
+        $ledger = Join-Path $trackRoot 'geckolib-4-to-5.md'
+        if (Test-Path -LiteralPath $ledger) { $files.Add($ledger) | Out-Null }
+        $band = '4-to-5.5.3'
+    }
+    elseif ($Track -eq 'mcreator') {
+        $rank = ConvertTo-VersionRank $SourceVersion
+        $band1201 = ConvertTo-VersionRank '1.20.1'
+        $use1201 = ($null -ne $rank -and $null -ne $band1201 -and $rank -le $band1201) -or ($SourceVersion -eq '1.20.1')
+        if ($use1201) {
+            $band = '1.20.1'
+            $ledger = Join-Path $trackRoot 'mcreator-1.20.1-to-26.2.md'
+        }
+        else {
+            $band = '1.21.x'
+            $ledger = Join-Path $trackRoot 'mcreator-1.21.x-to-26.2.md'
+        }
+        if (Test-Path -LiteralPath $ledger) { $files.Add($ledger) | Out-Null }
+    }
+    return [pscustomobject]@{
+        Track        = $Track
+        LedgerSource = if ($files.Count -gt 0) { 'bundled' } else { 'missing' }
+        IndexPath    = if (Test-Path -LiteralPath $indexPath) { $indexPath } else { $null }
+        Files        = @($files)
+        Band         = $band
+    }
+}
+
+function Select-IncrementalDeltaHits {
+    [CmdletBinding()]
+    param(
+        [string[]]$Files = @(),
+        [string[]]$Terms = @(),
+        [int]$MaxHits = 8
+    )
+    $hits = @()
+    $termList = @()
+    foreach ($term in @($Terms)) {
+        $termText = [string]$term
+        if ($termText.Length -ge 3 -and $termList -notcontains $termText) {
+            $termList += $termText
+        }
+    }
+    foreach ($file in @($Files)) {
+        $filePath = [string]$file
+        if (-not $filePath -or -not (Test-Path -LiteralPath $filePath)) { continue }
+        $lines = @(Get-Content -LiteralPath $filePath -ErrorAction SilentlyContinue)
+        $lineCount = $lines.Count
+        for ($i = 0; $i -lt $lineCount; $i++) {
+            $line = [string]$lines[$i]
+            $matched = @()
+            if ($termList.Count -eq 0) {
+                if ($line -match '^\|\s+[a-z0-9-]+\s+\|') {
+                    $matched = @('ledger-row')
+                }
+                else { continue }
+            }
+            else {
+                $lineLower = $line.ToLowerInvariant()
+                foreach ($termText in $termList) {
+                    if ($lineLower.Contains($termText.ToLowerInvariant())) {
+                        $matched += $termText
+                    }
+                }
+                if ($matched.Count -eq 0) { continue }
+            }
+            $start = 0
+            if ($i -gt 0) { $start = $i - 1 }
+            $end = $i + 1
+            if ($end -ge $lineCount) { $end = $lineCount - 1 }
+            $chunk = @()
+            for ($k = $start; $k -le $end; $k++) { $chunk += [string]$lines[$k] }
+            $excerpt = [string]::Join("`n", $chunk)
+            if ($excerpt.Length -gt 500) { $excerpt = $excerpt.Substring(0, 500) }
+            $hits += [pscustomobject]@{
+                path          = $filePath
+                line          = ($i + 1)
+                matched_terms = $matched
+                excerpt       = $excerpt
+            }
+            if ($hits.Count -ge $MaxHits) { return $hits }
+            break
+        }
+    }
+    return $hits
+}
+
+function Get-EvidenceQueryTerms {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)]$Profile)
+    $terms = New-Object System.Collections.Generic.List[string]
+    foreach ($feat in @($Profile.ApiFeatures)) {
+        $id = [string]$feat
+        if ($id) { $terms.Add($id) | Out-Null }
+    }
+    foreach ($extra in @('GuiGraphics', 'AnimationController', 'RenderSystem', 'PacketDistributor', 'RecordCodecBuilder', 'GeckoLib', 'mcreator')) {
+        $terms.Add($extra) | Out-Null
+    }
+    return @($terms | Select-Object -Unique)
+}
+
+function Write-MigrationEvidencePacket {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]$Profile,
+        [Parameter(Mandatory)][string]$OutputDirectory,
+        [object[]]$DependencyRecords = @(),
+        [string]$ConverterVersion = '2.0.3'
+    )
+    $sourceVersion = [string]$Profile.SourceVersion
+    $neo = Resolve-PrimerChangesLedger -SourceVersion $sourceVersion -TargetVersion '26.2'
+    $signals = Get-DetectedHardDepSignals -Profile $Profile -DependencyRecords $DependencyRecords
+    $terms = Get-EvidenceQueryTerms -Profile $Profile
+    $exactRules = @(Get-PrimerMigrationRules -SourceVersion $sourceVersion)
+
+    $neoFiles = @()
+    if ($neo.IndexPath) { $neoFiles += $neo.IndexPath }
+    if ($neo.ShardDir) {
+        $neoFiles += @(Get-ChildItem -LiteralPath $neo.ShardDir -Filter '*.md' -File -ErrorAction SilentlyContinue |
+            Sort-Object {
+                $rank = ConvertTo-VersionRank $_.BaseName
+                if ($null -eq $rank) { [int64]0 } else { [int64]$rank }
+            } -Descending |
+            Select-Object -ExpandProperty FullName)
+    }
+    $neoHits = @(Select-IncrementalDeltaHits -Files $neoFiles -Terms $terms -MaxHits 8)
+
+    $tracks = [ordered]@{
+        neoforge = [ordered]@{
+            ledger_source      = $neo.LedgerSource
+            match              = $neo.MatchKind
+            stub_source        = $neo.StubSource
+            primer_chain       = @($neo.PrimerChain)
+            index              = $neo.IndexPath
+            shards             = $neo.ShardDir
+            matched_deltas     = @($neoHits)
+            executable_index   = (Join-Path $PSScriptRoot 'PrimerChangeIndex.json')
+            exact_primer_rules = @($exactRules)
+        }
+    }
+
+    if ($signals.GeckoLib) {
+        $g = Resolve-DependencyChangeLedger -Track 'geckolib' -SourceVersion $sourceVersion
+        $gHits = @(Select-IncrementalDeltaHits -Files $g.Files -Terms $terms -MaxHits 6)
+        $tracks.geckolib = [ordered]@{
+            required         = $true
+            from_api         = '4.x'
+            to_api           = '5.5.3'
+            band             = $g.Band
+            ledger_source    = $g.LedgerSource
+            index            = $g.IndexPath
+            files            = @($g.Files)
+            matched_deltas   = @($gHits)
+            executable_pass  = 'geckolib'
+        }
+    }
+    if ($signals.MCreator) {
+        $m = Resolve-DependencyChangeLedger -Track 'mcreator' -SourceVersion $sourceVersion
+        $mHits = @(Select-IncrementalDeltaHits -Files $m.Files -Terms $terms -MaxHits 8)
+        $tracks.mcreator = [ordered]@{
+            required           = $true
+            band               = $m.Band
+            ledger_source      = $m.LedgerSource
+            index              = $m.IndexPath
+            files              = @($m.Files)
+            matched_deltas     = @($mHits)
+            executable_passes  = @($Profile.RecommendedPasses | Where-Object { $_ -like 'mcreator-*' })
+            upstream_catalog   = 'knowledge/Solved_Problems/legacy-java-converter-26.2/MCreator-generator-delta-catalog.md'
+        }
+    }
+
+    $claim = 'LEDGER_MISSING'
+    if ($neo.LedgerSource -ne 'missing') { $claim = 'LEDGER_ATTACHED' }
+    if (($signals.GeckoLib -or $signals.MCreator) -and $neo.LedgerSource -eq 'missing') { $claim = 'PARTIAL' }
+    if ($neo.LedgerSource -ne 'missing' -and (($signals.GeckoLib -and -not $tracks.Contains('geckolib')) -or ($signals.MCreator -and -not $tracks.Contains('mcreator')))) {
+        $claim = 'PARTIAL'
+    }
+
+    $packet = [ordered]@{
+        schema                 = 'rb-converter-migration-evidence-v1'
+        converter_version      = $ConverterVersion
+        source_version         = $sourceVersion
+        target_version         = '26.2'
+        route                  = [string]$Profile.Route
+        primer_selection_rule  = 'source_version < primer_version <= target_version'
+        grounding_rule         = 'Incremental post-source deltas only; prefer primer_changes shards over full primers; confirm final NeoForge APIs against exact 26.2 source; dep pins from DependencyCatalog. ExactPrimer/GeckoLib/MCreator passes remain executable.'
+        claim_status           = $claim
+        hard_dep_signals       = [ordered]@{ geckolib = [bool]$signals.GeckoLib; mcreator = [bool]$signals.MCreator }
+        tracks                 = $tracks
+    }
+
+    $jsonPath = Join-Path $OutputDirectory 'MIGRATION_EVIDENCE.json'
+    $mdPath = Join-Path $OutputDirectory 'MIGRATION_EVIDENCE.md'
+    $json = $packet | ConvertTo-Json -Depth 8
+    [IO.File]::WriteAllText($jsonPath, $json + "`r`n")
+
+    $md = New-Object System.Collections.Generic.List[string]
+    $md.Add('# Migration evidence packet') | Out-Null
+    $md.Add('') | Out-Null
+    $md.Add(('Converter **{0}**; source **{1}** -> target **26.2**; route `{2}`; claim `{3}`.' -f $ConverterVersion, $sourceVersion, $Profile.Route, $claim)) | Out-Null
+    $md.Add('') | Out-Null
+    $md.Add('Deterministic ledgers select incremental post-source deltas. ExactPrimer / GeckoLib / MCreator PowerShell passes remain the executors.') | Out-Null
+    $md.Add('') | Out-Null
+    $md.Add('## NeoForge primers') | Out-Null
+    $md.Add('') | Out-Null
+    $md.Add(('- Ledger source: `{0}` (match `{1}`)' -f $neo.LedgerSource, $neo.MatchKind)) | Out-Null
+    if ($neo.IndexPath) { $md.Add(('- Index: `{0}`' -f $neo.IndexPath)) | Out-Null }
+    if ($neo.ShardDir) { $md.Add(('- Shards: `{0}`' -f $neo.ShardDir)) | Out-Null }
+    if (@($neo.PrimerChain).Count -gt 0) { $md.Add(('- Chain: `{0}`' -f ($neo.PrimerChain -join ' -> '))) | Out-Null }
+    $ruleText = if ($exactRules.Count) { $exactRules -join ', ' } else { '(none)' }
+    $md.Add(('- ExactPrimer rule IDs: `{0}`' -f $ruleText)) | Out-Null
+    foreach ($hit in $neoHits) {
+        $md.Add(('- Hit L{0} `{1}`: {2}' -f $hit.line, $hit.path, (($hit.matched_terms) -join ', '))) | Out-Null
+    }
+    if ($tracks.Contains('geckolib')) {
+        $g = $tracks.geckolib
+        $md.Add('') | Out-Null
+        $md.Add('## GeckoLib') | Out-Null
+        $md.Add('') | Out-Null
+        $md.Add(('- Band: `{0}` -> `{1}` ({2})' -f $g.from_api, $g.to_api, $g.band)) | Out-Null
+        $md.Add(('- Ledger: `{0}`' -f $g.ledger_source)) | Out-Null
+        if ($g.index) { $md.Add(('- Index: `{0}`' -f $g.index)) | Out-Null }
+        $md.Add(('- Executable pass: `{0}`' -f $g.executable_pass)) | Out-Null
+    }
+    if ($tracks.Contains('mcreator')) {
+        $m = $tracks.mcreator
+        $md.Add('') | Out-Null
+        $md.Add('## MCreator') | Out-Null
+        $md.Add('') | Out-Null
+        $md.Add(('- Band: `{0}`' -f $m.band)) | Out-Null
+        $md.Add(('- Ledger: `{0}`' -f $m.ledger_source)) | Out-Null
+        if ($m.index) { $md.Add(('- Index: `{0}`' -f $m.index)) | Out-Null }
+        $passText = if (@($m.executable_passes).Count) { @($m.executable_passes) -join ', ' } else { 'mcreator-*' }
+        $md.Add(('- Executable passes: `{0}`' -f $passText)) | Out-Null
+        $md.Add(('- Upstream catalog: `{0}`' -f $m.upstream_catalog)) | Out-Null
+    }
+    $md.Add('') | Out-Null
+    $md.Add('Machine-readable twin: `MIGRATION_EVIDENCE.json`.') | Out-Null
+    [IO.File]::WriteAllText($mdPath, (($md -join "`r`n") + "`r`n"))
+
+    return [pscustomobject]@{
+        JsonPath     = $jsonPath
+        MarkdownPath = $mdPath
+        ClaimStatus  = $claim
+        Packet       = $packet
+        Signals      = $signals
+        NeoForge     = $neo
+    }
+}
+
+function Add-MigrationEvidenceToProfile {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]$Profile,
+        [Parameter(Mandatory)]$EvidenceResult
+    )
+    $Profile | Add-Member -NotePropertyName MigrationEvidence -NotePropertyValue ([pscustomobject]@{
+            ClaimStatus     = $EvidenceResult.ClaimStatus
+            JsonPath        = $EvidenceResult.JsonPath
+            MarkdownPath    = $EvidenceResult.MarkdownPath
+            NeoForgeLedger  = $EvidenceResult.NeoForge.LedgerSource
+            HardDepSignals  = $EvidenceResult.Signals
+        }) -Force
+    return $Profile
+}
+
 function Write-CompileDiagnosticSummary {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$LogPath, [Parameter(Mandatory)][int]$ExitCode)
@@ -581,4 +1025,197 @@ function Write-CompileDiagnosticSummary {
     ) + $rows + @('', 'See `compile-errors.log` for the full Gradle output.') |
         Set-Content -LiteralPath (Join-Path $dir 'COMPILE_REPORT.md') -Encoding UTF8
     return $summary
+}
+
+function ConvertFrom-ClassFileMajorToJavaMajor {
+    param([Parameter(Mandatory)][int]$ClassMajor)
+    if ($ClassMajor -lt 45) { return 0 }
+    return ($ClassMajor - 44)
+}
+
+function Get-JavaMajorVersion {
+    param([Parameter(Mandatory)][string]$JavaPath)
+    try {
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = $JavaPath
+        $psi.Arguments = '-version'
+        $psi.UseShellExecute = $false
+        $psi.RedirectStandardOutput = $true
+        $psi.RedirectStandardError = $true
+        $psi.CreateNoWindow = $true
+        $proc = [Diagnostics.Process]::Start($psi)
+        $err = $proc.StandardError.ReadToEnd()
+        $out = $proc.StandardOutput.ReadToEnd()
+        $proc.WaitForExit()
+        $text = "$err`n$out"
+        if ($text -match 'version\s+"1\.(\d+)') { return [int]$Matches[1] }
+        if ($text -match 'version\s+"(\d+)') { return [int]$Matches[1] }
+    } catch {
+        return 0
+    }
+    return 0
+}
+
+function Get-JarRequiredJavaMajor {
+    param(
+        [Parameter(Mandatory)][string]$JarPath,
+        [string]$PreferredEntry = 'org/jetbrains/java/decompiler/main/decompiler/ConsoleDecompiler.class',
+        [int]$FallbackJavaMajor = 17
+    )
+    if (-not (Test-Path -LiteralPath $JarPath)) { return $FallbackJavaMajor }
+    Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+    $zip = $null
+    try {
+        $zip = [IO.Compression.ZipFile]::OpenRead((Resolve-Path -LiteralPath $JarPath).Path)
+        $maxClassMajor = 0
+        $preferred = $zip.Entries | Where-Object { $_.FullName -eq $PreferredEntry } | Select-Object -First 1
+        $sample = New-Object System.Collections.Generic.List[object]
+        if ($preferred) { $sample.Add($preferred) | Out-Null }
+        $zip.Entries |
+            Where-Object { $_.FullName -like '*.class' -and $_.FullName -ne $PreferredEntry } |
+            Select-Object -First 40 |
+            ForEach-Object { $sample.Add($_) | Out-Null }
+        foreach ($entry in $sample) {
+            $stream = $null
+            try {
+                $stream = $entry.Open()
+                $header = New-Object byte[] 8
+                $read = $stream.Read($header, 0, 8)
+                if ($read -lt 8) { continue }
+                if ($header[0] -ne 0xCA -or $header[1] -ne 0xFE -or $header[2] -ne 0xBA -or $header[3] -ne 0xBE) { continue }
+                $classMajor = ($header[6] -shl 8) -bor $header[7]
+                if ($classMajor -gt $maxClassMajor) { $maxClassMajor = $classMajor }
+            } finally {
+                if ($stream) { $stream.Dispose() }
+            }
+        }
+        if ($maxClassMajor -le 0) { return $FallbackJavaMajor }
+        $javaMajor = ConvertFrom-ClassFileMajorToJavaMajor -ClassMajor $maxClassMajor
+        if ($javaMajor -lt 8) { return $FallbackJavaMajor }
+        return $javaMajor
+    } catch {
+        return $FallbackJavaMajor
+    } finally {
+        if ($zip) { $zip.Dispose() }
+    }
+}
+
+function Get-ProjectRequiredJavaMajor {
+    <#
+    .SYNOPSIS
+      Read a NeoForge/ModDevGradle project's required Java major from build.gradle
+      (JavaLanguageVersion.of / options.release). Fallback 25 for Minecraft 26.2.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$ProjectRoot,
+        [int]$FallbackJavaMajor = 25
+    )
+    $buildGradle = Join-Path $ProjectRoot 'build.gradle'
+    if (-not (Test-Path -LiteralPath $buildGradle)) { return $FallbackJavaMajor }
+    $text = Get-Content -LiteralPath $buildGradle -Raw -ErrorAction SilentlyContinue
+    if (-not $text) { return $FallbackJavaMajor }
+    $found = New-Object System.Collections.Generic.List[int]
+    foreach ($m in [regex]::Matches($text, 'JavaLanguageVersion\.of\(\s*(\d+)\s*\)')) {
+        $found.Add([int]$m.Groups[1].Value) | Out-Null
+    }
+    foreach ($m in [regex]::Matches($text, 'options\.release\s*=\s*(\d+)')) {
+        $found.Add([int]$m.Groups[1].Value) | Out-Null
+    }
+    if ($found.Count -eq 0) { return $FallbackJavaMajor }
+    return (($found | Measure-Object -Maximum).Maximum)
+}
+
+function Resolve-Java {
+    param(
+        [string]$Preferred,
+        [int]$MinimumMajor = 17,
+        [string]$ForTool = 'tool'
+    )
+    $candidates = New-Object System.Collections.Generic.List[string]
+    if ($Preferred) { $candidates.Add($Preferred) | Out-Null }
+    foreach ($pattern in @(
+            "${env:ProgramFiles}\Eclipse Adoptium\jdk-*\bin\java.exe",
+            "${env:ProgramFiles}\Microsoft\jdk-*\bin\java.exe",
+            "${env:ProgramFiles}\Java\jdk-*\bin\java.exe",
+            "${env:ProgramFiles}\Amazon Corretto\jdk*\bin\java.exe",
+            "${env:LocalAppData}\Programs\Eclipse Adoptium\jdk-*\bin\java.exe"
+        )) {
+        Get-Item $pattern -ErrorAction SilentlyContinue | ForEach-Object { $candidates.Add($_.FullName) | Out-Null }
+    }
+    if ($env:JAVA_HOME) { $candidates.Add((Join-Path $env:JAVA_HOME 'bin\java.exe')) | Out-Null }
+    $cmd = Get-Command java -ErrorAction SilentlyContinue
+    if ($cmd) { $candidates.Add($cmd.Source) | Out-Null }
+
+    $usable = @()
+    $seen = @{}
+    foreach ($candidate in @($candidates)) {
+        if (-not $candidate -or -not (Test-Path -LiteralPath $candidate)) { continue }
+        $full = [IO.Path]::GetFullPath($candidate)
+        $key = $full.ToLowerInvariant()
+        if ($seen.ContainsKey($key)) { continue }
+        $seen[$key] = $true
+        $major = Get-JavaMajorVersion -JavaPath $full
+        if ($major -ge $MinimumMajor) {
+            $usable += [pscustomobject]@{ Path = $full; Major = $major }
+        }
+    }
+    if ($usable.Count -eq 0) {
+        throw ("{0} requires Java {1}+. No matching JDK was found. Install Temurin/Microsoft JDK {1}+ or pass -JavaExe." -f $ForTool, $MinimumMajor)
+    }
+    if ($Preferred -and (Test-Path -LiteralPath $Preferred)) {
+        $prefFull = [IO.Path]::GetFullPath($Preferred)
+        $prefHit = $usable | Where-Object { $_.Path -eq $prefFull } | Select-Object -First 1
+        if ($prefHit) { return $prefHit }
+    }
+    $exact = @($usable | Where-Object { $_.Major -eq $MinimumMajor } | Select-Object -First 1)
+    if ($exact.Count -gt 0) { return $exact[0] }
+    return ($usable | Sort-Object Major | Select-Object -First 1)
+}
+
+function Get-JavaHomeFromJavaExe {
+    param([Parameter(Mandatory)][string]$JavaExePath)
+    $bin = Split-Path -Parent $JavaExePath
+    return (Split-Path -Parent $bin)
+}
+
+function Invoke-GradleBuildWithRequiredJava {
+    param(
+        [Parameter(Mandatory)][string]$ProjectRoot,
+        [string]$Tasks = 'build --no-daemon --stacktrace',
+        [string]$LogFileName = 'compile-errors.log',
+        [int]$FallbackJavaMajor = 25
+    )
+    $required = Get-ProjectRequiredJavaMajor -ProjectRoot $ProjectRoot -FallbackJavaMajor $FallbackJavaMajor
+    # Gradle itself needs 17+; project toolchain may be higher (25 for NeoForge 26.2).
+    if ($required -lt 17) { $required = 17 }
+    $choice = Resolve-Java -MinimumMajor $required -ForTool ("Gradle project (requires Java {0})" -f $required)
+    $javaHome = Get-JavaHomeFromJavaExe -JavaExePath $choice.Path
+    $logPath = Join-Path $ProjectRoot $LogFileName
+    $gradlew = Join-Path $ProjectRoot 'gradlew.bat'
+    if (-not (Test-Path -LiteralPath $gradlew)) { throw "gradlew.bat missing under $ProjectRoot" }
+
+    $oldHome = $env:JAVA_HOME
+    $oldPath = $env:PATH
+    try {
+        $env:JAVA_HOME = $javaHome
+        $env:PATH = "$javaHome\bin;$oldPath"
+        Push-Location $ProjectRoot
+        try {
+            cmd /c "gradlew.bat $Tasks > `"$LogFileName`" 2>&1"
+            $exitCode = $LASTEXITCODE
+        } finally {
+            Pop-Location
+        }
+    } finally {
+        $env:JAVA_HOME = $oldHome
+        $env:PATH = $oldPath
+    }
+    return [pscustomobject]@{
+        ExitCode       = $exitCode
+        RequiredMajor  = $required
+        SelectedMajor  = $choice.Major
+        JavaHome       = $javaHome
+        JavaExe        = $choice.Path
+        LogPath        = $logPath
+    }
 }

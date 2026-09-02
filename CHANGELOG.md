@@ -1,13 +1,53 @@
-﻿## 2.0.4 — 2026-08-30
+## 2.10.2 — 2026-09-02
 
-MedSystem CASE-004 Mode B reconvert green-build fix.
+GrokBuild failure handoff + primer/CASE-first session wiring.
+
+- GUI: **Fix in Grok** button + post-failure prompt launches `C:\rmblocal_llm\Start-GrokBuild.ps1` against the station converter workspace with a primer/CASE-first repair prompt (`GROK_REPAIR_PROMPT.md` in the failed output).
+- `Start-GrokBuild.ps1`: optional `-Prompt` / `-PromptFile`.
+- `generate_project_knowledge_context.py`: mandatory order — SESSION / MIGRATION_EVIDENCE / primer_changes / CASE files **before inventing fixes**.
+- Station converter project initialized with `.rb-migration` + refreshed `.grok/rules`.
+# 2.10.1 — 2026-09-02
+
+CASE-005 gecko_kings full-restore tools rebuild (GUI Setup + Portable).
+
+- Ships Invoke-Minecraft262CompileRepairPass leftovers from full AVP restore: multiline `EntityType.builtInRegistryHolder().is`, `ThrownSplashPotion`, ServerLevel GameRules, MobEffects SLOWNESS/JUMP_BOOST, sword bare `F` → `-0.8F`, plus prior 2.10.0 CASE-005 armor/boss/AI remaps.
+- Solved index notes updated for full restore jar (~5.9MB; renderers/models/procedures).
+- Knowledge: `CASE-005-gecko-kings-1.21.1.md` full-restore status.
+# 2.10.0 — 2026-09-02
+
+Test build: incremental migration evidence + MedSystem overlay hardening on the 2.0.3 converter baseline.
+
+### Hotfix (same 2.10.0 AppData patch)
+
+- Shared Java selection in `ConversionCore.ps1`: detect required major from tool JAR bytecode or project `build.gradle` (`JavaLanguageVersion.of` / `options.release`), then pick exact/closest-higher installed JDK.
+- Vineflower decompile uses that path (needs 17+; ignores Java-8 `JAVA_HOME`).
+- Gradle `-Compile` sets `JAVA_HOME` from the NeoForge 26.2 toolchain requirement (**Java 25**) before `gradlew build` (fixes `Gradle requires JVM 17+ ... configured to use JVM 8`).
+
+### CASE-005 gecko_kings_avp_mod (full restore)
+
+- Proven full jar: `gecko_kings_avp_mod-24.5+mc26.2-neoforge.jar` (~5.9MB) — 80 renderers, 43 models, 93 procedures (datagen exclude only). Project: `…-26.2-full`.
+- Grounded in station `primer_changes_1.21.1-to-26.2` Entity Render States + `MIGRATION_EVIDENCE.md` ExactPrimer rule `entity-render-state`.
+- Acid projectiles: `submit(state, PoseStack, SubmitNodeCollector, CameraRenderState)` + `extractRenderState` (vanilla `ArrowRenderer` shape), not old entity-typed `render`.
+- `Invoke-Minecraft262CompileRepairPass` also encodes: multiline `getType().builtInRegistryHolder().is`; `ThrownSplashPotion`/`SPLASH_POTION`; ServerLevel GameRules; MobEffects `SLOWNESS`/`JUMP_BOOST`; sword attack-speed bare `F` → `-0.8F`; prior armor/boss/AI/arrow remaps.
+- Interim client compile-gate jar (~5.2MB) superseded. Not in-game verified yet.
+
+### Migration evidence packet
+
+- Convert writes `MIGRATION_EVIDENCE.md` / `.json` after dependency detection.
+- NeoForge track uses station `primer_changes_<src>-to-26.2` when present, else bundled `lib/primer_changes/` index stubs.
+- Hard-dep tracks for **GeckoLib** and **MCreator** when signaled (`lib/dep_changes/`).
+- ExactPrimer / GeckoLib / MCreator passes remain the executors; packet is query-filtered incremental evidence.
+- Station: cloned `knowledge/_upstream/mcreator` (MCreator/MCreator) + `MCreator-generator-delta-catalog.md`.
+
+### MedSystem overlay
 
 - Rebuilt `lib/overlays/medsystem/1.21.1.zip` from the proven green `oldmedsystem` tree (previous zip matched broken author-oracle DFU sources and undid `Invoke-DfuCodecRepairPass`).
 - Overlay `DELETE.txt` now removes soft-dep Integration classes, Vineflower util leftovers (`MedsystemCodecs`/`Weighted*`), broken client shaders, and non-compiling debug mixins.
 - Overlay `medsystem.mixins.json` no longer references deleted `DebugRendererMixin` / `EntityRenderDispatcherMixin`.
 - Soft-dep exclude also matches `integration/carryon|sable|jei|appleskin` paths (not only hard imports).
 - Proven after overlay apply: `gradlew build` → `medsystem-2.12.1+mc26.2-neoforge.jar` (~1.0MB).
-## 2.0.3 â€” 2026-08-30
+
+## 2.0.3 — 2026-08-30
 
 MedSystem 1.21.1 â†’ 26.2 converter path (CASE-004) proven in-game.
 

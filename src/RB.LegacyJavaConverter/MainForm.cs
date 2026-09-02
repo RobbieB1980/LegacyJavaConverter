@@ -7,7 +7,7 @@ namespace RB.LegacyJavaConverter;
 public sealed class MainForm : Form
 {
     private static string AppVersion =>
-        Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "2.0.4";
+        Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "2.10.2";
 
     private readonly RadioButton _radProject = new() { Text = "Mode A: Project folder (Forge source with src/)", AutoSize = true, Checked = true };
     private readonly RadioButton _radJar = new() { Text = "Mode B: Finished .jar file (decompile, not decrypt)", AutoSize = true };
@@ -31,6 +31,7 @@ public sealed class MainForm : Form
     private readonly Button _btnBrowseOut = NewButton("Browse...", 110);
     private readonly Button _btnRun = NewButton("Convert", 130);
     private readonly Button _btnOpenOut = NewButton("Open output", 130);
+    private readonly Button _btnFixGrok = NewButton("Fix in Grok", 130);
     private readonly Button _btnClear = NewButton("Clear log", 120);
     private readonly ProgressBar _progress = new()
     {
@@ -189,16 +190,17 @@ public sealed class MainForm : Form
 
         var actions = new TableLayoutPanel
         {
-            ColumnCount = 4,
+            ColumnCount = 5,
             RowCount = 1,
             AutoSize = false,
             Height = 44,
             Dock = DockStyle.Top,
             Margin = new Padding(0, 0, 0, 8)
         };
-        actions.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 140f));
-        actions.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 140f));
         actions.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130f));
+        actions.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130f));
+        actions.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 130f));
+        actions.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120f));
         actions.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100f));
         actions.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
 
@@ -214,14 +216,22 @@ public sealed class MainForm : Form
         _btnOpenOut.Enabled = false;
         _btnOpenOut.Height = 36;
 
+        _btnFixGrok.Dock = DockStyle.Fill;
+        _btnFixGrok.Margin = new Padding(0, 4, 8, 4);
+        _btnFixGrok.Enabled = false;
+        _btnFixGrok.Height = 36;
+        _btnFixGrok.BackColor = Color.FromArgb(50, 70, 120);
+        _btnFixGrok.FlatAppearance.BorderColor = Color.FromArgb(90, 120, 180);
+
         _btnClear.Dock = DockStyle.Fill;
         _btnClear.Margin = new Padding(0, 4, 8, 4);
         _btnClear.Height = 36;
 
         actions.Controls.Add(_btnRun, 0, 0);
         actions.Controls.Add(_btnOpenOut, 1, 0);
-        actions.Controls.Add(_btnClear, 2, 0);
-        actions.Controls.Add(_progress, 3, 0);
+        actions.Controls.Add(_btnFixGrok, 2, 0);
+        actions.Controls.Add(_btnClear, 3, 0);
+        actions.Controls.Add(_progress, 4, 0);
 
         var logHeader = new Label
         {
@@ -313,6 +323,7 @@ public sealed class MainForm : Form
             else
                 MessageBox.Show(this, "Output does not exist yet.", "Open output", MessageBoxButtons.OK, MessageBoxIcon.Information);
         };
+        _btnFixGrok.Click += (_, _) => LaunchGrokRepairSession(offerPrompt: false);
         _btnClear.Click += (_, _) => _log.Clear();
 
         Shown += (_, _) =>
@@ -584,6 +595,7 @@ public sealed class MainForm : Form
         _btnRun.Enabled = !busy;
         _btnBrowseIn.Enabled = !busy;
         _btnBrowseOut.Enabled = !busy;
+        _btnFixGrok.Enabled = !busy && !string.IsNullOrWhiteSpace(_lastOutput) && Directory.Exists(_lastOutput);
         _txtInput.Enabled = !busy;
         _txtOutput.Enabled = !busy;
         _txtNeo.Enabled = !busy;
@@ -601,6 +613,7 @@ public sealed class MainForm : Form
             _chkCompile.Enabled = false;
             _chkDry.Enabled = false;
             _chkContinueNeo.Enabled = false;
+            _btnFixGrok.Enabled = false;
         }
         else
         {
@@ -847,13 +860,118 @@ public sealed class MainForm : Form
                 {
                     AppendLog("The conversion scaffold was preserved for repair.", Color.Gold);
                     _btnOpenOut.Enabled = true;
+                    _btnFixGrok.Enabled = true;
                     if (File.Exists(Path.Combine(_lastOutput, "compile-errors.log")))
                         AppendLog("See compile-errors.log for the first remaining build error.", Color.Khaki);
+                    AppendLog("Click \"Fix in Grok\" to open GrokBuild with primers/cases first.", Color.Khaki);
+                    LaunchGrokRepairSession(offerPrompt: true);
                 }
             }
             try { _running.Dispose(); } catch { /* ignore */ }
             _running = null;
         };
         _pollTimer.Start();
+    }
+
+    /// <summary>
+    /// Opens C:\rmblocal_llm\Start-GrokBuild.ps1 against the station converter workspace,
+    /// with a prompt that forces MIGRATION_EVIDENCE / primers / CASE files before inventing fixes.
+    /// </summary>
+    private void LaunchGrokRepairSession(bool offerPrompt)
+    {
+        var output = string.IsNullOrWhiteSpace(_lastOutput) ? _txtOutput.Text.Trim() : _lastOutput;
+        if (string.IsNullOrWhiteSpace(output) || !Directory.Exists(output))
+        {
+            MessageBox.Show(this, "No conversion output folder to repair yet.", "Fix in Grok",
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        if (offerPrompt)
+        {
+            var ask = MessageBox.Show(this,
+                "Conversion failed but a scaffold was written.\n\n" +
+                "Open GrokBuild (C:\\rmblocal_llm) to repair it?\n" +
+                "The session will be instructed to read MIGRATION_EVIDENCE, primers, and CASE files BEFORE inventing fixes.",
+                "Fix in GrokBuild",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question);
+            if (ask != DialogResult.Yes) return;
+        }
+
+        const string rbRoot = @"C:\rmblocal_llm";
+        var startGrok = Path.Combine(rbRoot, "Start-GrokBuild.ps1");
+        var workspace = Path.Combine(rbRoot, "projects", "RB-Legacy-Java-Converter");
+        if (!File.Exists(startGrok))
+        {
+            MessageBox.Show(this,
+                "Start-GrokBuild.ps1 was not found at:\n" + startGrok +
+                "\n\nInstall/update RB Local LLM first.",
+                "Fix in Grok", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        if (!Directory.Exists(workspace))
+        {
+            MessageBox.Show(this,
+                "Converter workspace missing:\n" + workspace,
+                "Fix in Grok", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        try
+        {
+            var promptPath = Path.Combine(output, "GROK_REPAIR_PROMPT.md");
+            File.WriteAllText(promptPath, BuildGrokRepairPrompt(output), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+
+            var args =
+                "-NoExit -ExecutionPolicy Bypass -File " + Quote(startGrok) +
+                " -ProjectPath " + Quote(workspace) +
+                " -Root " + Quote(rbRoot) +
+                " -PromptFile " + Quote(promptPath);
+
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = "powershell.exe",
+                Arguments = args,
+                UseShellExecute = true,
+                WorkingDirectory = workspace
+            });
+
+            AppendLog("Launched Start-GrokBuild.ps1 for repair.", Color.LightSkyBlue);
+            AppendLog("Workspace: " + workspace, Color.DimGray);
+            AppendLog("Prompt file: " + promptPath, Color.DimGray);
+        }
+        catch (Exception ex)
+        {
+            AppendLog("Failed to launch GrokBuild: " + ex.Message, Color.Salmon);
+            MessageBox.Show(this, ex.Message, "Fix in Grok", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    private static string BuildGrokRepairPrompt(string failedOutput)
+    {
+        var evidence = Path.Combine(failedOutput, "MIGRATION_EVIDENCE.md");
+        var profile = Path.Combine(failedOutput, "SOURCE_PROFILE.json");
+        var errors = Path.Combine(failedOutput, "compile-errors.log");
+        var solved = @"C:\rmblocal_llm\knowledge\Solved_Problems\legacy-java-converter-26.2";
+        var primers = @"C:\rmblocal_llm\knowledge\NeoForge_Primers\26.2";
+
+        return
+            "You are repairing a failed RB Legacy Java Converter → NeoForge 26.2 run.\n\n" +
+            "FAILED OUTPUT FOLDER:\n" + failedOutput + "\n\n" +
+            "MANDATORY ORDER — do this BEFORE inventing any fix or writing Java:\n" +
+            "1. Read project AGENTS.md and the newest SESSION-CONTINUE-*.md under:\n   " + solved + "\n" +
+            "2. Read these files in the failed output (if present):\n" +
+            "   - " + evidence + "\n" +
+            "   - " + profile + "\n" +
+            "   - " + errors + "\n" +
+            "3. From SOURCE_PROFILE / MIGRATION_EVIDENCE, open ONLY the matching primer_changes ledger under:\n   " + primers + "\n" +
+            "   (primer_changes_<source>-to-26.2.md + one shard at a time). Do NOT dump every full primer.\n" +
+            "4. Search solved cases (CASE-003/004/005, LEARNINGS, DFU/OVY/INT/PKG) in:\n   " + solved + "\n" +
+            "5. Confirm APIs against exact NeoForge/Minecraft 26.2 sources, then fix.\n" +
+            "6. Prefer encoding durable remaps into tools/Convert-Forge1201-ToNeoForge262.ps1 / SolvedConversionIndex over one-off patches.\n" +
+            "7. Success = gradlew build producing build/libs/*.jar (not compileJava alone).\n\n" +
+            "Do not invent a permanent client renderer compile-gate when the primer Entity Render State / submit path is unfinished.\n" +
+            "Start now by reading the evidence files and stating the detected source version + applicable primer ledger.";
     }
 }

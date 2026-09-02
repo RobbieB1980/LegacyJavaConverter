@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Decompile a finished Minecraft mod .jar into a source project folder.
 
@@ -43,22 +43,8 @@ function Write-Ok([string]$m) { Write-Host "    $m" -ForegroundColor Green }
 function Write-Warn2([string]$m) { Write-Host "    WARN: $m" -ForegroundColor Yellow }
 function Write-Info([string]$m) { Write-Host "    $m" }
 
-function Resolve-Java {
-    param([string]$Preferred)
-    if ($Preferred -and (Test-Path -LiteralPath $Preferred)) { return (Resolve-Path $Preferred).Path }
-    $cmd = Get-Command java -ErrorAction SilentlyContinue
-    if ($cmd) { return $cmd.Source }
-    foreach ($c in @(
-        "$env:JAVA_HOME\bin\java.exe",
-        "${env:ProgramFiles}\Java\*\bin\java.exe",
-        "${env:ProgramFiles}\Eclipse Adoptium\*\bin\java.exe",
-        "${env:ProgramFiles}\Microsoft\jdk-*\bin\java.exe"
-    )) {
-        $hit = Get-Item $c -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($hit) { return $hit.FullName }
-    }
-    throw "Java not found. Install a JDK (17+) and ensure 'java' is on PATH, or pass -JavaExe."
-}
+# Java detection/selection helpers live in lib/ConversionCore.ps1
+# (Get-JarRequiredJavaMajor / Resolve-Java / Get-ProjectRequiredJavaMajor / Invoke-GradleBuildWithRequiredJava).
 
 function Get-VineflowerJar {
     param([string]$Version, [string]$CacheDir)
@@ -238,12 +224,20 @@ else {
     New-Item -ItemType Directory -Path $OutputPath -Force | Out-Null
 }
 
-$java = Resolve-Java -Preferred $JavaExe
-Write-Ok "Java: $java"
-
 $cacheDir = Join-Path $ToolRoot 'lib\decompiler-cache'
 $vine = Get-VineflowerJar -Version $VineflowerVersion -CacheDir $cacheDir
 Write-Ok "Vineflower: $vine"
+
+$requiredJava = Get-JarRequiredJavaMajor -JarPath $vine -FallbackJavaMajor 17
+Write-Info "Vineflower bytecode requires Java $requiredJava+"
+$javaChoice = Resolve-Java -Preferred $JavaExe -MinimumMajor $requiredJava -ForTool "Vineflower $VineflowerVersion"
+$java = [string]$javaChoice.Path
+$javaMajor = [int]$javaChoice.Major
+if ($javaMajor -eq $requiredJava) {
+    Write-Ok "Java: $java (major $javaMajor; exact match for Vineflower)"
+} else {
+    Write-Ok "Java: $java (major $javaMajor; Vineflower needs $requiredJava+, closest installed higher JDK)"
+}
 
 $work = Join-Path ([IO.Path]::GetTempPath()) ("rb-jar-decompile-" + [guid]::NewGuid().ToString('N'))
 $extractDir = Join-Path $work 'extract'

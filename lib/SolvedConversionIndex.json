@@ -1,4 +1,4 @@
-﻿{
+{
     "schemaVersion":  1,
     "description":  "Encoded completed conversions. The converter matches modId + sourceVersion and applies overlays, forced passes, and named transforms automatically.",
     "solutions":  [
@@ -134,6 +134,41 @@
                                                   "configuration"
                                               ],
                           "notes":  "CASE-004 green reconvert fixed in 2.0.4: overlay rebuilt from proven green tree (not broken author-oracle DFU sources) + DELETE.txt for soft-deps/Vineflower leftovers/broken shaders/mixins; mixins.json drops DebugRenderer/EntityRenderDispatcher; soft-dep exclude also matches integration/carryon|sable paths. Proven: medsystem-2.12.1+mc26.2-neoforge.jar (~1.0MB). Prefer official 2.13.0+26.2 when published."
+                      },
+                      {
+                          "id":  "CASE-005-gecko-kings-1.21.1",
+                          "modIds":  [
+                                         "gecko_kings_avp_mod"
+                                     ],
+                          "sourceVersions":  [
+                                                 "1.21.1"
+                                             ],
+                          "routeHint":  "neoforge-1.21.x",
+                          "forcePasses":  [
+                                              "mechanical-java",
+                                              "neoforge-26-api",
+                                              "mcreator-1.21.x",
+                                              "registry",
+                                              "block-item-id",
+                                              "assets"
+                                          ],
+                          "forceRules":  [
+                                             "entity-render-state",
+                                             "game-rules-rewrite",
+                                             "deferred-entity-type-registration",
+                                             "armor-tool-item-components",
+                                             "projectile-arrow-package"
+                                         ],
+                          "transforms":  [
+                                             "client-package-moves"
+                                         ],
+                          "overlays":  [
+
+                                       ],
+                          "dependencyHints":  [
+                                                  "geckolib"
+                                              ],
+                          "notes":  "CASE-005 full restore: gecko_kings_avp_mod-24.5+mc26.2-neoforge.jar (~5.9MB) on 2.10.1 with 80 renderers + 43 models + 93 procedures (datagen exclude only). Primers: entity-render-state submit/extractRenderState for acid projectiles (ArrowRenderer pattern); ServerBossEvent UUID; customServerAiStep ServerLevel; ArmorMaterial static; EntityType tag builtInRegistryHolder; ThrownSplashPotion; ServerLevel GameRules; MobEffects SLOWNESS/JUMP_BOOST. Not in-game verified yet."
                       },
                       {
                           "id":  "CASE-002-friend-1.20.1",
