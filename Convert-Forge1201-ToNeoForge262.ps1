@@ -1782,6 +1782,11 @@ function Invoke-Minecraft262CompileRepairPass {
                 'EntityType<\?\s+extends\s+(\w+AcidEntity|\w+ArrowEntity|\w+ProjectileEntity)>',
                 'EntityType<? extends AbstractArrow>')
         }
+        # CASE-005: AbstractArrow ctor is EntityType<? extends AbstractArrow>; Builder.of(Foo::new)
+        # infers EntityType<Entity> and fails. Pin the type argument on acid/arrow builders.
+        $t = [regex]::Replace($t,
+            'EntityType\.Builder\.of\(\s*(\w+(?:Acid|Arrow)Entity)::new\s*,',
+            'EntityType.Builder.<$1>of($1::new,')
 
         # Vineflower swim LookControl: Entity.this used where getXRot() was intended
         $t = [regex]::Replace($t, 'rotlerp\(\s*(\w+Entity)\.this\s*,', 'rotlerp($1.this.getXRot(),')
@@ -1797,13 +1802,29 @@ function Invoke-Minecraft262CompileRepairPass {
         }
 
         # Registries.ARMOR_MATERIAL removed in 26.2 — ArmorMaterial is a plain record used via humanoidArmor
-        if ($t -match 'Registries\.ARMOR_MATERIAL' -and $t -match 'ArmorMaterial armorMaterial = new ArmorMaterial') {
+        if ($t -match 'Registries\.ARMOR_MATERIAL' -and $t -match 'new\s+ArmorMaterial\s*\(') {
             $m = [regex]::Match($t, 'ArmorMaterial\s+armorMaterial\s*=\s*(new\s+ArmorMaterial\s*\(.*?\))\s*;', [System.Text.RegularExpressions.RegexOptions]::Singleline)
             if ($m.Success) {
                 $ctor = $m.Groups[1].Value
-                $t = [regex]::Replace($t,
-                    '(?s)public static ArmorMaterial ARMOR_MATERIAL;\s*@SubscribeEvent\s*public static void registerArmorMaterial\s*\(\s*RegisterEvent\s+\w+\s*\)\s*\{.*?ARMOR_MATERIAL\s*=\s*armorMaterial;\s*\}\s*\}',
+                # Balanced-brace strip of registerArmorMaterial (nested RegisterEvent lambda)
+                $t2 = [regex]::Replace($t,
+                    '(?s)public\s+static\s+(?:final\s+)?ArmorMaterial\s+ARMOR_MATERIAL\s*;\s*@SubscribeEvent\s*public\s+static\s+void\s+registerArmorMaterial\s*\(\s*RegisterEvent\s+\w+\s*\)\s*\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\}',
                     "public static final ArmorMaterial ARMOR_MATERIAL = $ctor;", 1)
+                if ($t2 -eq $t) {
+                    # Fallback: drop event.register(Registries.ARMOR_MATERIAL, ...) body and keep static field
+                    $t2 = [regex]::Replace($t,
+                        '(?s)@SubscribeEvent\s*public\s+static\s+void\s+registerArmorMaterial\s*\(\s*RegisterEvent\s+\w+\s*\)\s*\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\}',
+                        '', 1)
+                    $t2 = $t2 -replace 'public\s+static\s+ArmorMaterial\s+ARMOR_MATERIAL\s*;',
+                        "public static final ArmorMaterial ARMOR_MATERIAL = $ctor;"
+                }
+                $t = $t2
+                # Legacy IClientItemExtensions humanoid armor model hooks are not the 26.2 path.
+                # Use balanced braces (not non-greedy .*? to first '}') and real newlines (not a
+                # single-quoted literal `r`n) so Mode B does not leave orphaned method bodies.
+                $t = [regex]::Replace($t,
+                    '(?s)(@SubscribeEvent\s*public\s+static\s+void\s+registerItemExtensions\s*\(\s*RegisterClientExtensionsEvent\s+\w+\s*\)\s*\{)(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*(\})',
+                    ("`$1${nl}      // client armor model extensions deferred to equipment assets${nl}   `$2"), 1)
                 if ($t -notmatch '\bRegisterEvent\b') {
                     $t = $t -replace 'import\s+net\.neoforged\.neoforge\.registries\.RegisterEvent\s*;\r?\n', ''
                 }
@@ -1865,6 +1886,95 @@ function Invoke-Minecraft262CompileRepairPass {
         }
         # Vineflower/sword attack-speed token lost as bare F
         $t = $t -replace '\.sword\(\s*TOOL_MATERIAL\s*,\s*([0-9.]+F)\s*,\s*F\s*\)', '.sword(TOOL_MATERIAL, $1, -0.8F)'
+
+        # CASE-005 / primer entity-render-state: projectile EntityRenderer still on entity-typed render(...)
+        # Rewrite to ArrowRenderer-shaped submit(state, PoseStack, SubmitNodeCollector, CameraRenderState).
+        if ($file.Name -match 'Renderer\.java$' -and
+            $t -match 'extends\s+EntityRenderer<' -and
+            $t -match 'public\s+void\s+render\s*\(' -and
+            ($t -match 'RenderTypes\.entityCutout' -or $t -match 'bufferIn\.getBuffer' -or $t -match 'SubmitNodeCollector bufferIn')) {
+            $entMatch = [regex]::Match($t, 'extends\s+EntityRenderer<\s*([\w.]+)\s*,')
+            $texMatch = [regex]::Match($t, 'Identifier\s+\w+\s*=\s*Identifier\.parse\("([^"]+)"\)')
+            $modelField = [regex]::Match($t, 'private\s+final\s+(\w+)\s+(\w+)\s*;')
+            if ($entMatch.Success -and $texMatch.Success -and $modelField.Success -and $t -notmatch 'public\s+void\s+submit\s*\(\s*LivingEntityRenderState') {
+                $entType = $entMatch.Groups[1].Value
+                $texLiteral = $texMatch.Groups[1].Value
+                $modelType = $modelField.Groups[1].Value
+                $modelName = $modelField.Groups[2].Value
+                $pkgMatch = [regex]::Match($t, '(?m)^package\s+([^;]+);')
+                $pkg = if ($pkgMatch.Success) { $pkgMatch.Groups[1].Value } else { 'unknown.client.renderer' }
+                $clsMatch = [regex]::Match($t, 'public\s+class\s+(\w+)\s+extends')
+                $cls = if ($clsMatch.Success) { $clsMatch.Groups[1].Value } else { $file.BaseName }
+                $layerExpr = "$modelType.LAYER_LOCATION"
+                $lm = [regex]::Match($t, 'bakeLayer\(([^)]+)\)')
+                if ($lm.Success) { $layerExpr = $lm.Groups[1].Value }
+                $origLines = $o -split "`r?`n"
+                $modelImport = ($origLines | Where-Object { $_ -match ('import\s+[\w.]+' + [regex]::Escape($modelType) + '\s*;') } | Select-Object -First 1)
+                if (-not $modelImport) { $modelImport = "import $pkg.$modelType;" -replace '\.client\.renderer\.', '.client.model.' }
+                $entImport = ($origLines | Where-Object { $_ -match ('import\s+[\w.]+' + [regex]::Escape(($entType -replace '^.*\.','')) + '\s*;') } | Select-Object -First 1)
+                if (-not $entImport -and $entType -match '\.') { $entImport = "import $entType;" }
+                elseif (-not $entImport) { $entImport = "import unknown.entity.$entType;" }
+                $entSimple = ($entType -replace '^.*\.','')
+                $t = @"
+package $pkg;
+
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.math.Axis;
+$($modelImport.Trim())
+$($entImport.Trim())
+import net.minecraft.client.renderer.SubmitNodeCollector;
+import net.minecraft.client.renderer.entity.EntityRenderer;
+import net.minecraft.client.renderer.entity.EntityRendererProvider.Context;
+import net.minecraft.client.renderer.entity.state.LivingEntityRenderState;
+import net.minecraft.client.renderer.state.level.CameraRenderState;
+import net.minecraft.client.renderer.texture.OverlayTexture;
+import net.minecraft.resources.Identifier;
+
+/** Primer 1.21.2 Entity Render States — mirror ArrowRenderer.submit pattern. */
+public class $cls extends EntityRenderer<$entSimple, LivingEntityRenderState> {
+   private static final Identifier TEXTURE = Identifier.parse("$texLiteral");
+   private final $modelType $modelName;
+
+   public $cls(Context context) {
+      super(context);
+      this.$modelName = new $modelType(context.bakeLayer($layerExpr));
+   }
+
+   @Override
+   public LivingEntityRenderState createRenderState() {
+      return new LivingEntityRenderState();
+   }
+
+   @Override
+   public void extractRenderState($entSimple entity, LivingEntityRenderState state, float partialTicks) {
+      super.extractRenderState(entity, state, partialTicks);
+      state.xRot = entity.getXRot(partialTicks);
+      state.yRot = entity.getYRot(partialTicks);
+   }
+
+   @Override
+   public void submit(LivingEntityRenderState state, PoseStack poseStack, SubmitNodeCollector buffer, CameraRenderState camera) {
+      poseStack.pushPose();
+      poseStack.mulPose(Axis.YP.rotationDegrees(state.yRot - 90.0F));
+      poseStack.mulPose(Axis.ZP.rotationDegrees(90.0F + state.xRot));
+      this.$modelName.setupAnim(state);
+      buffer.submitModel(this.$modelName, state, poseStack, TEXTURE, state.lightCoords, OverlayTexture.NO_OVERLAY, state.outlineColor, null);
+      poseStack.popPose();
+      super.submit(state, poseStack, buffer, camera);
+   }
+}
+"@
+            }
+        }
+
+        # Projectile models: setupAnim(Entity,...) / multi-arg → setupAnim(LivingEntityRenderState)
+        if ($file.Name -match 'Model' -and $t -match 'EntityModel<' -and $t -match 'setupAnim\(' -and $t -match 'Acid|Spit|Projectile|Arrow') {
+            $t = $t -replace 'extends\s+EntityModel<\s*Entity\s*>', 'extends EntityModel<net.minecraft.client.renderer.entity.state.LivingEntityRenderState>'
+            $t = $t -replace 'extends\s+EntityModel<\s*[\w.]+Entity\s*>', 'extends EntityModel<net.minecraft.client.renderer.entity.state.LivingEntityRenderState>'
+            $t = [regex]::Replace($t,
+                '(?s)public\s+void\s+setupAnim\s*\([^)]*\)\s*\{.*?\}',
+                "public void setupAnim(net.minecraft.client.renderer.entity.state.LivingEntityRenderState entity) {`r`n      // EntityRenderState-driven; pose from extractRenderState`r`n   }")
+        }
 
         if ($t -ne $o) {
             [IO.File]::WriteAllText($file.FullName, $t)
@@ -2578,22 +2688,29 @@ function Invoke-McreatorForge1201ResiduePass {
         $t = $t -replace 'if \(!animation\.equals\("undefined"\)\)', 'if (!syncedAnim.equals("undefined"))'
         $t = $t -replace 'syncable\.animationprocedure = animation;', 'syncable.animationprocedure = syncedAnim;'
 
-        # MobEffect 26.2
+        # MobEffect 26.2 (exact target: applyEffectTick(ServerLevel, LivingEntity, int))
         $t = $t -replace 'boolean isDurationEffectTick\(', 'boolean shouldApplyEffectTickThisTick('
         $t = [regex]::Replace($t,
-            'public void applyEffectTick\(LivingEntity (\w+), int (\w+)\) \{([^}]*)\}',
-            'public boolean applyEffectTick(net.minecraft.server.level.ServerLevel level, LivingEntity $1, int $2) {$3 return true; }')
+            '(?m)^(\s*)(?:@Override\s*)?public void applyEffectTick\(LivingEntity (\w+), int (\w+)\) \{([^}]*)\}',
+            '${1}public boolean applyEffectTick(ServerLevel level, LivingEntity $2, int $3) {$4 return true; }')
         # Already-boolean applyEffectTick without ServerLevel (CASE-005)
         $t = [regex]::Replace($t,
-            'public boolean applyEffectTick\(LivingEntity (\w+), int (\w+)\)',
-            'public boolean applyEffectTick(net.minecraft.server.level.ServerLevel level, LivingEntity $1, int $2)')
+            '(?m)^(\s*)(?:@Override\s*)?public boolean applyEffectTick\(LivingEntity (\w+), int (\w+)\)',
+            '${1}public boolean applyEffectTick(ServerLevel level, LivingEntity $2, int $3)')
         $t = $t -replace 'super\.applyEffectTick\(\s*(\w+)\s*,\s*(\w+)\s*\)', 'super.applyEffectTick(level, $1, $2)'
-        if ($t -match 'applyEffectTick\(net\.minecraft\.server\.level\.ServerLevel' -and $t -notmatch 'import\s+net\.minecraft\.server\.level\.ServerLevel\s*;') {
-            $t = [regex]::Replace($t, '(?m)^(package\s+[^;]+;\s*)', "`$1`r`nimport net.minecraft.server.level.ServerLevel;`r`n", 1)
+        if ($t -match 'applyEffectTick\(\s*ServerLevel\b' -and $t -notmatch 'import\s+net\.minecraft\.server\.level\.ServerLevel\s*;') {
+            $t = [regex]::Replace($t, '(?m)^(package\s+[^;]+;\s*)', ("`$1${nl}import net.minecraft.server.level.ServerLevel;${nl}"), 1)
         }
+        # Drop removed IClientMobEffectExtensions.renderInventoryText (EffectRenderingInventoryScreen gone)
         $t = [regex]::Replace($t,
-            '(?ms)\s*public boolean renderInventoryText\([^)]*\) \{\s*return false;\s*\}',
+            '(?ms)\s*(?:@Override\s*)?public boolean renderInventoryText\([^)]*\) \{\s*return false;\s*\}',
             '')
+        if ($t -notmatch '\bEffectRenderingInventoryScreen\b') {
+            $t = $t -replace 'import\s+net\.minecraft\.client\.gui\.screens\.inventory\.EffectRenderingInventoryScreen\s*;\r?\n', ''
+        }
+        if ($t -notmatch '\bGuiGraphicsExtractor\b') {
+            $t = $t -replace 'import\s+net\.minecraft\.client\.gui\.GuiGraphicsExtractor\s*;\r?\n', ''
+        }
 
         # CompoundTag 26.2 Optional accessors — only NBT variables, never Brigadier getDouble
         foreach ($nbtVar in @('nbt', 'tag', 'compound', 'compoundTag')) {
@@ -2868,6 +2985,29 @@ function Invoke-BlockItemIdPass {
         $t = [regex]::Replace($t,
             'REGISTRY\.register\("([^"]+)",\s*\(\)\s*->\s*new (\w+Block)\(\)\)',
             'REGISTRY.registerBlock("$1", $2::new)')
+
+        # CASE-005: MCreator/decompile often emits FooBlock::new after Properties ctor rewrite.
+        # registerBlock injects setId; plain register(Supplier) only fits no-arg ctors.
+        # Convert method-ref register → registerBlock only when the target type takes Properties.
+        if ($t -match 'REGISTRY\.register\("[^"]+",\s*\w+::new\)') {
+            $blockRoot = Join-Path $Root 'src\main\java'
+            $t = [regex]::Replace($t, 'REGISTRY\.register\("([^"]+)",\s*(\w+)::new\)', {
+                param($m)
+                $id = $m.Groups[1].Value
+                $typeName = $m.Groups[2].Value
+                $typeFile = Get-ChildItem -LiteralPath $blockRoot -Recurse -Filter ($typeName + '.java') -File -ErrorAction SilentlyContinue |
+                    Select-Object -First 1
+                if ($null -ne $typeFile) {
+                    $typeText = [System.IO.File]::ReadAllText($typeFile.FullName)
+                    $hasPropsCtor = $typeText -match ('public\s+' + [regex]::Escape($typeName) + '\s*\(\s*(?:[\w.]+)?Properties\s+\w+\s*\)')
+                    $hasNoArgCtor = $typeText -match ('public\s+' + [regex]::Escape($typeName) + '\s*\(\s*\)')
+                    if ($hasPropsCtor -and -not $hasNoArgCtor) {
+                        return ('REGISTRY.registerBlock("' + $id + '", ' + $typeName + '::new)')
+                    }
+                }
+                return $m.Value
+            })
+        }
 
         # Items: REGISTRY.register("id", () -> new FooItem()) -> registerItem
         $t = [regex]::Replace($t,
@@ -3480,7 +3620,7 @@ foreach ($dr in $depRecords) {
 }
 
 Write-Step 'Building incremental migration evidence packet (NeoForge + hard deps)'
-$converterVersionLabel = '2.10.0'
+$converterVersionLabel = '2.10.3'
 foreach ($vf in @(
         (Join-Path $ToolRoot '..\version.txt'),
         (Join-Path $ToolRoot 'version.txt'),

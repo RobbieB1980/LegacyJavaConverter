@@ -16,11 +16,13 @@
 | `mc-121-no-generator-262` | gap | No MCreator `generator-26.2` yet | converter ExactPrimer + passes | catalog |
 | `mc-121-boss-uuid` | signature_changed | `ServerBossEvent` needs `UUID` first | `neoforge-26-api` / 262-repair | CASE-005 |
 | `mc-121-ai-step-level` | signature_changed | `customServerAiStep(ServerLevel)` | 262-repair | CASE-005 |
-| `mc-121-armor-record` | removed | No `Registries.ARMOR_MATERIAL`; static `ArmorMaterial` + `humanoidArmor` | 262-repair | CASE-005 |
+| `mc-121-armor-record` | removed | No `Registries.ARMOR_MATERIAL`; static `ArmorMaterial` + `humanoidArmor`; stub `registerItemExtensions` (balanced braces) | 262-repair | CASE-005 |
+| `mc-121-acid-builder-of` | signature_changed | `Builder.of(AcidEntity::new)` → `Builder.<AcidEntity>of` when ctor takes `EntityType<? extends AbstractArrow>` | 262-repair | CASE-005 |
 | `mc-121-effect-tick-level` | signature_changed | `applyEffectTick(ServerLevel, LivingEntity, int)` | `mcreator-1.21.x` | CASE-005 |
 | `mc-121-potion-named` | signature_changed | `new Potion(String name, MobEffectInstance...)` | 262-repair | CASE-005 |
 | `mc-121-client-render-gate` | behavioral | Interim exclude only — superseded by full restore | project gate | CASE-005 |
-| `mc-121-submit-projectile` | signature_changed | Projectile renderers use `submit(state,…,CameraRenderState)` not entity `render` | manual / ArrowRenderer pattern | CASE-005 / primer 1.21.2 |
+| `mc-121-submit-projectile` | signature_changed | Projectile renderers use `submit(state,…,CameraRenderState)` not entity `render` | `262-repair` (ArrowRenderer pattern) | CASE-005 / primer 1.21.2 |
+| `mc-121-registerblock-methodref` | signature_changed | `REGISTRY.register("id", FooBlock::new)` → `registerBlock` when ctor takes `Properties` | `block-item-id` | CASE-005 / REG-001 |
 | `mc-121-entity-type-tag` | signature_changed | `getType().is(TagKey)` → `builtInRegistryHolder().is` (multiline) | 262-repair | CASE-005 |
 | `mc-121-thrown-splash` | replaced_by | `AbstractThrownPotion` → `ThrownSplashPotion` / `SPLASH_POTION` | 262-repair | CASE-005 |
 | `mc-121-gamerules-serverlevel` | signature_changed | Spawn GameRules via `ServerLevel.getGameRules()` | 262-repair | CASE-005 |

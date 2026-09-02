@@ -7,9 +7,9 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$Tag = 'v2.0.4',
+    [string]$Tag = 'v2.10.3',
     [string]$Repo = 'RobbieB1980/LegacyJavaConverter',
-    [string]$Name = 'RB Legacy Java Converter 2.0.4'
+    [string]$Name = 'RB Legacy Java Converter 2.10.3'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -68,13 +68,13 @@ Converts **Forge/NeoForge 1.20.1–26.1** (and decompiled jars) → **NeoForge 2
 | ``RB-Legacy-Java-Converter-Setup.exe`` | Windows installer (self-contained; **embeds** portable toolset only) |
 | ``RB-Legacy-Java-Converter-Portable.zip`` | No install — extract and run ``Start-Converter.bat`` or the EXE |
 
-### What's new in 2.0.4
+### What's new in 2.10.3
 
-- **GUI/Setup version bump to 2.0.4** (was still showing 1.5.5 in window titles)
-- **CASE-004 MedSystem** Mode B green-build fix: rebuilt ``lib/overlays/medsystem/1.21.1.zip`` from the proven green tree (previous zip reintroduced broken DFU/oracle sources after repair)
-- Overlay ``DELETE.txt`` removes soft-dep Integration classes, Vineflower util leftovers, broken client shaders, and non-compiling debug mixins
-- Soft-dep exclude also matches ``integration/carryon|sable|jei|appleskin`` paths (not only hard imports)
-- Includes Mel 2.0.x API wave + DFU/record/mixin repair band from 2.0.0–2.0.3
+- **CASE-005 gecko_kings** Mode B remaps: ``register("id", FooBlock::new)`` → ``registerBlock`` when Properties ctor; acid/projectile ``submit``/``extractRenderState``; nested ``ArmorMaterial`` static rewrite
+- Hotfix: ``registerItemExtensions`` stub uses balanced braces + real newlines (no literal `` `r`n `` / orphaned method bodies)
+- Hotfix: ``EntityType.Builder.<AcidEntity>of`` for AbstractArrow factories; hardened ``applyEffectTick(ServerLevel,…)`` + strip removed ``renderInventoryText``
+- Re-verified Test1 gecko_kings → ``gradlew build`` installable jar (~5.9MB; 80 renderers / 43 models / 93 procedures)
+- Includes 2.10.0–2.10.2 CASE-005 full restore + Fix-in-Grok handoff tooling
 
 ### Requirements
 

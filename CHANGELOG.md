@@ -1,3 +1,15 @@
+## 2.10.3 — 2026-09-02
+
+CASE-005 remaps that Mode B still missed on `gecko_kings` Test1 re-run:
+
+- `block-item-id`: `REGISTRY.register("id", FooBlock::new)` → `registerBlock` when the block ctor takes `Properties` (no-arg ctors stay on `register`).
+- `262-repair`: acid/projectile `EntityRenderer.render(entity,…)` → `submit`/`extractRenderState` (ArrowRenderer / primer entity-render-state); projectile model `setupAnim(LivingEntityRenderState)`.
+- `262-repair`: stronger nested `Registries.ARMOR_MATERIAL` → static `ArmorMaterial` rewrite.
+- `262-repair` hotfix (same-day Test1 repair): `registerItemExtensions` stub must use balanced braces + real newlines (single-quoted `` `$1`r`n `` left literal backticks / orphaned method bodies).
+- `262-repair`: `EntityType.Builder.of(FooAcidEntity::new` → `Builder.<FooAcidEntity>of` when ctor takes `EntityType<? extends AbstractArrow>`.
+- `262-repair`: harden `applyEffectTick(ServerLevel,…)` + strip removed `renderInventoryText` / unused `GuiGraphicsExtractor` imports.
+- Re-verified: Test1 `gecko_kings_avp_mod-24.5-neoforge-1.21.1-26.2` → `gradlew build` → `gecko_kings_avp_mod-24.5+mc26.2-neoforge.jar` (~5.9MB; 80 renderers / 43 models / 93 procedures).
+
 ## 2.10.2 — 2026-09-02
 
 GrokBuild failure handoff + primer/CASE-first session wiring.

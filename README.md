@@ -1,8 +1,8 @@
 # Legacy Java Converter
 
-**Current release: v2.10.0**
+**Current release: v2.10.3**
 
-Windows GUI and PowerShell migration assistant for **Forge/NeoForge 1.20.1 through 26.1** → **NeoForge 26.2** ModDevGradle projects.
+Windows GUI and PowerShell migration assistant for **Forge/NeoForge 1.20.1+** → **NeoForge 26.2** ModDevGradle projects.
 
 The converter detects the source version and API features, decompiles finished JARs, migrates known Java/resource patterns, resolves dependencies, generates the 26.2 project and optionally runs a complete Gradle build. Project-specific code can still require manual repair. The rewrite stack was proven on:
 
@@ -12,8 +12,8 @@ The converter detects the source version and API features, decompiles finished J
 - **MOAdecor BATH 1.21.8.A** — MCreator NeoForge 1.21.8 jar → 26.2 **compile + `gradlew build`**
 - **NextGen Furniture 1.21.11** — finished NeoForge jar → 26.2 **full build and installable jar**
 - **NextGen Furniture 1.21.1** — exact-version primer path → 26.2 **full build and installable jar**
-- **Mel's DeCo 1.21.4** — MCreator NeoForge jar → 26.2 **full build + in-game** with NextGen (converter 2.0.2)
-- **Medical System 1.21.1** — hand-written NeoForge jar → 26.2 **full build + in-game** (CASE-004 / converter 2.0.3)
+- **Mel's DeCo 1.21.4** — MCreator NeoForge jar → 26.2 **full build + in-game** with NextGen
+- **gecko_kings_avp_mod 1.21.1** — CASE-005 full restore → 26.2 installable jar (~5.9MB; converter 2.10.3 remaps)
 
 Related product: [RB-Mcreator-Version-Updater](https://github.com/RobbieB1980/RB-Mcreator-Version-Updater) (26.1 → 26.2 NeoForge/MCreator updater).
 
