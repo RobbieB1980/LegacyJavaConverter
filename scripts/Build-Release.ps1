@@ -124,7 +124,7 @@ $versionFile = Join-Path $RepoRoot 'version.txt'
 if (-not (Test-Path $versionFile)) {
     # Fall back to GUI csproj Version when version.txt is absent.
     $guiCsproj = Join-Path $RepoRoot 'src\RB.LegacyJavaConverter\RB.LegacyJavaConverter.csproj'
-    $ver = '2.10.4'
+    $ver = '2.10.5'
     if (Test-Path $guiCsproj) {
         $m = Select-String -Path $guiCsproj -Pattern '<Version>([^<]+)</Version>' | Select-Object -First 1
         if ($m) { $ver = $m.Matches[0].Groups[1].Value }

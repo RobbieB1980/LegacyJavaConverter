@@ -1922,6 +1922,32 @@ function Invoke-Minecraft262CompileRepairPass {
         # Vineflower/sword attack-speed token lost as bare F
         $t = $t -replace '\.sword\(\s*TOOL_MATERIAL\s*,\s*([0-9.]+F)\s*,\s*F\s*\)', '.sword(TOOL_MATERIAL, $1, -0.8F)'
 
+        # CASE-005 MobEffect 26.2 — MUST live in this pass (runs for every route).
+        # Previously only in Invoke-McreatorForge1201ResiduePass (gated on mcreator-1.20.1),
+        # so NeoForge 1.21.x Mode B never applied them and installer runs regenerated the same errors.
+        # Exact target: applyEffectTick(ServerLevel, LivingEntity, int); renderInventoryText removed.
+        $t = $t -replace 'boolean isDurationEffectTick\(', 'boolean shouldApplyEffectTickThisTick('
+        $t = [regex]::Replace($t,
+            '(?m)^(\s*)(?:@Override\s*)?public void applyEffectTick\(LivingEntity (\w+), int (\w+)\) \{([^}]*)\}',
+            '${1}public boolean applyEffectTick(ServerLevel level, LivingEntity $2, int $3) {$4 return true; }')
+        $t = [regex]::Replace($t,
+            '(?m)^(\s*)(?:@Override\s*)?public boolean applyEffectTick\(LivingEntity (\w+), int (\w+)\)',
+            '${1}public boolean applyEffectTick(ServerLevel level, LivingEntity $2, int $3)')
+        $t = $t -replace 'super\.applyEffectTick\(\s*(\w+)\s*,\s*(\w+)\s*\)', 'super.applyEffectTick(level, $1, $2)'
+        if ($t -match 'applyEffectTick\(\s*ServerLevel\b' -and $t -notmatch 'import\s+net\.minecraft\.server\.level\.ServerLevel\s*;') {
+            $t = [regex]::Replace($t, '(?m)^(package\s+[^;]+;\s*)', ("`$1${nl}import net.minecraft.server.level.ServerLevel;${nl}"), 1)
+        }
+        $t = [regex]::Replace($t,
+            '(?ms)\s*(?:@Override\s*)?public\s+boolean\s+renderInventoryText\s*\([^)]*\)\s*\{\s*return\s+false;\s*\}',
+            '')
+        $bodyNoImpFx = [regex]::Replace($t, '(?m)^import\s+[^;]+;\s*\r?\n', '')
+        if ($bodyNoImpFx -notmatch '\bEffectRenderingInventoryScreen\b') {
+            $t = $t -replace '(?m)^import\s+net\.minecraft\.client\.gui\.screens\.inventory\.EffectRenderingInventoryScreen\s*;\r?\n', ''
+        }
+        if ($bodyNoImpFx -notmatch '\bGuiGraphicsExtractor\b') {
+            $t = $t -replace '(?m)^import\s+net\.minecraft\.client\.gui\.GuiGraphicsExtractor\s*;\r?\n', ''
+        }
+
         # CASE-005 / primer entity-render-state: projectile EntityRenderer still on entity-typed render(...)
         # Rewrite to ArrowRenderer-shaped submit(state, PoseStack, SubmitNodeCollector, CameraRenderState).
         if ($file.Name -match 'Renderer\.java$' -and
@@ -2723,24 +2749,23 @@ function Invoke-McreatorForge1201ResiduePass {
         $t = $t -replace 'if \(!animation\.equals\("undefined"\)\)', 'if (!syncedAnim.equals("undefined"))'
         $t = $t -replace 'syncable\.animationprocedure = animation;', 'syncable.animationprocedure = syncedAnim;'
 
-        # MobEffect 26.2 (exact target: applyEffectTick(ServerLevel, LivingEntity, int))
+        # MobEffect 26.2 — kept here for 1.20.1 residue route; primary copy is in
+        # Invoke-Minecraft262CompileRepairPass so 1.21.x Mode B also applies them.
+        $nlFx = [Environment]::NewLine
         $t = $t -replace 'boolean isDurationEffectTick\(', 'boolean shouldApplyEffectTickThisTick('
         $t = [regex]::Replace($t,
             '(?m)^(\s*)(?:@Override\s*)?public void applyEffectTick\(LivingEntity (\w+), int (\w+)\) \{([^}]*)\}',
             '${1}public boolean applyEffectTick(ServerLevel level, LivingEntity $2, int $3) {$4 return true; }')
-        # Already-boolean applyEffectTick without ServerLevel (CASE-005)
         $t = [regex]::Replace($t,
             '(?m)^(\s*)(?:@Override\s*)?public boolean applyEffectTick\(LivingEntity (\w+), int (\w+)\)',
             '${1}public boolean applyEffectTick(ServerLevel level, LivingEntity $2, int $3)')
         $t = $t -replace 'super\.applyEffectTick\(\s*(\w+)\s*,\s*(\w+)\s*\)', 'super.applyEffectTick(level, $1, $2)'
         if ($t -match 'applyEffectTick\(\s*ServerLevel\b' -and $t -notmatch 'import\s+net\.minecraft\.server\.level\.ServerLevel\s*;') {
-            $t = [regex]::Replace($t, '(?m)^(package\s+[^;]+;\s*)', ("`$1${nl}import net.minecraft.server.level.ServerLevel;${nl}"), 1)
+            $t = [regex]::Replace($t, '(?m)^(package\s+[^;]+;\s*)', ("`$1${nlFx}import net.minecraft.server.level.ServerLevel;${nlFx}"), 1)
         }
-        # Drop removed IClientMobEffectExtensions.renderInventoryText (EffectRenderingInventoryScreen gone)
         $t = [regex]::Replace($t,
             '(?ms)\s*(?:@Override\s*)?public\s+boolean\s+renderInventoryText\s*\([^)]*\)\s*\{\s*return\s+false;\s*\}',
             '')
-        # Import lines themselves contain the symbol — strip only when unused in body
         $bodyNoImp = [regex]::Replace($t, '(?m)^import\s+[^;]+;\s*\r?\n', '')
         if ($bodyNoImp -notmatch '\bEffectRenderingInventoryScreen\b') {
             $t = $t -replace '(?m)^import\s+net\.minecraft\.client\.gui\.screens\.inventory\.EffectRenderingInventoryScreen\s*;\r?\n', ''

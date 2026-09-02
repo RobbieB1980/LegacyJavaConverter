@@ -1,9 +1,18 @@
+## 2.10.5 — 2026-09-03
+
+Installer regression root cause (why hand-repair went green, Mode B failed again):
+
+- CASE-005 `applyEffectTick(ServerLevel,…)` + `renderInventoryText` strip lived only in `Invoke-McreatorForge1201ResiduePass` (gated on profile pass `mcreator-1.20.1`).
+- NeoForge **1.21.x** jobs only enable `mcreator-1.21.x`, so Mode B never applied those remaps; SESSION notes incorrectly claimed they were in `262-repair`.
+- Fix: copy the MobEffect remaps into `Invoke-Minecraft262CompileRepairPass` (runs every route + post-MCreator sweep). Residue pass keeps an idempotent copy with a local `$nlFx`.
+- Re-verified: Test1 `gecko_kings` → 262-repair touches 9 potion units → `gradlew build` expected green jar.
+
 ## 2.10.4 — 2026-09-03
 
 CASE-005 Mode B leftover repair (Test1 `gecko_kings` failed output → green jar):
 
 - `262-repair`: `registerItemExtensions` stub is **ungated** from `Registries.ARMOR_MATERIAL` rewrite; brace-depth walker handles anon-class + method + if nesting (`HumanoidModel.crouching/riding/young` removed in 26.2).
-- `262-repair`: strip `renderInventoryText` / `GuiGraphicsExtractor` imports only when unused in the **body**.
+- `262-repair`: strip `renderInventoryText` / `GuiGraphicsExtractor` imports only when unused in the **body** (was documented here, but the MobEffect body remaps were still only on the 1.20.1 residue pass until 2.10.5).
 - Pipeline: re-run `Invoke-Minecraft262CompileRepairPass` after `mcreator-1.21.x` when that pass touches files.
 - Re-verified: Test1 → `gradlew build` → `gecko_kings_avp_mod-24.5+mc26.2-neoforge.jar` (~5.9MB; 80/43/93).
 

@@ -3,13 +3,13 @@
   Create/update a GitHub Release and upload portable + setup artifacts from dist/.
 
 .EXAMPLE
-  .\scripts\Publish-GitHubRelease.ps1 -Tag v2.0.4
+  .\scripts\Publish-GitHubRelease.ps1 -Tag v2.10.5
 #>
 [CmdletBinding()]
 param(
-    [string]$Tag = 'v2.10.4',
+    [string]$Tag = 'v2.10.5',
     [string]$Repo = 'RobbieB1980/LegacyJavaConverter',
-    [string]$Name = 'RB Legacy Java Converter 2.10.4'
+    [string]$Name = 'RB Legacy Java Converter 2.10.5'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -68,13 +68,13 @@ Converts **Forge/NeoForge 1.20.1–26.1** (and decompiled jars) → **NeoForge 2
 | ``RB-Legacy-Java-Converter-Setup.exe`` | Windows installer (self-contained; **embeds** portable toolset only) |
 | ``RB-Legacy-Java-Converter-Portable.zip`` | No install — extract and run ``Start-Converter.bat`` or the EXE |
 
-### What's new in 2.10.4
+### What's new in 2.10.5
 
-- **CASE-005 Mode B leftover repair**: ``registerItemExtensions`` stub ungated from ``Registries.ARMOR_MATERIAL`` rewrite; brace-depth walker (fixes ``HumanoidModel.crouching/riding/young`` leftovers)
-- ``renderInventoryText`` / ``GuiGraphicsExtractor`` import strip is body-aware (no false keep from import lines)
-- Pipeline re-runs ``262-repair`` after ``mcreator-1.21.x`` so ``applyEffectTick(ServerLevel,…)`` sticks
-- Re-verified Test1 gecko_kings → ``gradlew build`` installable jar (~5.9MB; 80 renderers / 43 models / 93 procedures)
-- Includes 2.10.0–2.10.3 CASE-005 remaps + Fix-in-Grok handoff tooling
+- **Installer regression fix**: CASE-005 ``applyEffectTick(ServerLevel,…)`` + ``renderInventoryText`` strip now live in ``Invoke-Minecraft262CompileRepairPass`` (every route)
+- Root cause: those remaps were only on ``Invoke-McreatorForge1201ResiduePass`` (gated ``mcreator-1.20.1``), so NeoForge **1.21.x** Mode B skipped them — hand-repaired folders went green, fresh installer runs failed again with the same 9 potion errors
+- Residue pass keeps an idempotent copy for true 1.20.1 MCreator jobs
+- Re-verified Test1 gecko_kings → ``gradlew build`` → ``gecko_kings_avp_mod-24.5+mc26.2-neoforge.jar`` (~5.9MB; 80/43/93)
+- Includes 2.10.0–2.10.4 CASE-005 remaps + Fix-in-Grok handoff tooling
 
 ### Requirements
 
