@@ -7,7 +7,7 @@ namespace RB.LegacyJavaConverter;
 public sealed class MainForm : Form
 {
     private static string AppVersion =>
-        Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "2.10.3";
+        Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "2.10.4";
 
     private readonly RadioButton _radProject = new() { Text = "Mode A: Project folder (Forge source with src/)", AutoSize = true, Checked = true };
     private readonly RadioButton _radJar = new() { Text = "Mode B: Finished .jar file (decompile, not decrypt)", AutoSize = true };

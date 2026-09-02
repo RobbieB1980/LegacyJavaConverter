@@ -1,3 +1,12 @@
+## 2.10.4 — 2026-09-03
+
+CASE-005 Mode B leftover repair (Test1 `gecko_kings` failed output → green jar):
+
+- `262-repair`: `registerItemExtensions` stub is **ungated** from `Registries.ARMOR_MATERIAL` rewrite; brace-depth walker handles anon-class + method + if nesting (`HumanoidModel.crouching/riding/young` removed in 26.2).
+- `262-repair`: strip `renderInventoryText` / `GuiGraphicsExtractor` imports only when unused in the **body**.
+- Pipeline: re-run `Invoke-Minecraft262CompileRepairPass` after `mcreator-1.21.x` when that pass touches files.
+- Re-verified: Test1 → `gradlew build` → `gecko_kings_avp_mod-24.5+mc26.2-neoforge.jar` (~5.9MB; 80/43/93).
+
 ## 2.10.3 — 2026-09-02
 
 CASE-005 remaps that Mode B still missed on `gecko_kings` Test1 re-run:

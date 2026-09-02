@@ -1819,14 +1819,49 @@ function Invoke-Minecraft262CompileRepairPass {
                         "public static final ArmorMaterial ARMOR_MATERIAL = $ctor;"
                 }
                 $t = $t2
-                # Legacy IClientItemExtensions humanoid armor model hooks are not the 26.2 path.
-                # Use balanced braces (not non-greedy .*? to first '}') and real newlines (not a
-                # single-quoted literal `r`n) so Mode B does not leave orphaned method bodies.
-                $t = [regex]::Replace($t,
-                    '(?s)(@SubscribeEvent\s*public\s+static\s+void\s+registerItemExtensions\s*\(\s*RegisterClientExtensionsEvent\s+\w+\s*\)\s*\{)(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*(\})',
-                    ("`$1${nl}      // client armor model extensions deferred to equipment assets${nl}   `$2"), 1)
                 if ($t -notmatch '\bRegisterEvent\b') {
                     $t = $t -replace 'import\s+net\.neoforged\.neoforge\.registries\.RegisterEvent\s*;\r?\n', ''
+                }
+            }
+        }
+
+        # Legacy IClientItemExtensions humanoid armor model hooks are not the 26.2 path
+        # (HumanoidModel crouching/riding/young removed; equipment assets own armor models).
+        # Must run even when ArmorMaterial is already a static record (CASE-005 leftover).
+        # Brace-depth walker: nested anon-class + method + if exceeds fixed-depth regex.
+        if ($t -match 'registerItemExtensions' -and ($t -match 'getHumanoidArmorModel' -or $t -match 'armorModel\.crouching')) {
+            $rxExt = [regex]'@SubscribeEvent\s*public\s+static\s+void\s+registerItemExtensions\s*\(\s*RegisterClientExtensionsEvent\s+\w+\s*\)\s*\{'
+            $mExt = $rxExt.Match($t)
+            if ($mExt.Success) {
+                $braceStart = $t.IndexOf('{', $mExt.Index + $mExt.Length - 1)
+                $depth = 0
+                $end = -1
+                for ($i = $braceStart; $i -lt $t.Length; $i++) {
+                    $ch = $t[$i]
+                    if ($ch -eq '{') { $depth++ }
+                    elseif ($ch -eq '}') {
+                        $depth--
+                        if ($depth -eq 0) { $end = $i; break }
+                    }
+                }
+                if ($end -ge 0) {
+                    $replacement = "@SubscribeEvent${nl}   public static void registerItemExtensions(RegisterClientExtensionsEvent event) {${nl}      // client armor model extensions deferred to equipment assets${nl}   }"
+                    $t = $t.Substring(0, $mExt.Index) + $replacement + $t.Substring($end + 1)
+                    # Drop imports only referenced by the removed hook body
+                    $bodyNoImp = [regex]::Replace($t, '(?m)^import\s+[^;]+;\s*\r?\n', '')
+                    foreach ($pair in @(
+                        @('net.neoforged.neoforge.client.extensions.common.IClientItemExtensions', 'IClientItemExtensions'),
+                        @('net.neoforged.api.distmarker.OnlyIn', 'OnlyIn'),
+                        @('net.neoforged.api.distmarker.Dist', 'Dist'),
+                        @('net.minecraft.client.model.HumanoidModel', 'HumanoidModel'),
+                        @('net.minecraft.client.model.geom.ModelPart', 'ModelPart'),
+                        @('net.minecraft.client.Minecraft', 'Minecraft'),
+                        @('net.neoforged.neoforge.registries.RegisterEvent', 'RegisterEvent')
+                    )) {
+                        if ($bodyNoImp -notmatch ("\b{0}\b" -f [regex]::Escape($pair[1]))) {
+                            $t = $t -replace ("(?m)^import\s+{0}\s*;\r?\n" -f [regex]::Escape($pair[0])), ''
+                        }
+                    }
                 }
             }
         }
@@ -2703,13 +2738,15 @@ function Invoke-McreatorForge1201ResiduePass {
         }
         # Drop removed IClientMobEffectExtensions.renderInventoryText (EffectRenderingInventoryScreen gone)
         $t = [regex]::Replace($t,
-            '(?ms)\s*(?:@Override\s*)?public boolean renderInventoryText\([^)]*\) \{\s*return false;\s*\}',
+            '(?ms)\s*(?:@Override\s*)?public\s+boolean\s+renderInventoryText\s*\([^)]*\)\s*\{\s*return\s+false;\s*\}',
             '')
-        if ($t -notmatch '\bEffectRenderingInventoryScreen\b') {
-            $t = $t -replace 'import\s+net\.minecraft\.client\.gui\.screens\.inventory\.EffectRenderingInventoryScreen\s*;\r?\n', ''
+        # Import lines themselves contain the symbol — strip only when unused in body
+        $bodyNoImp = [regex]::Replace($t, '(?m)^import\s+[^;]+;\s*\r?\n', '')
+        if ($bodyNoImp -notmatch '\bEffectRenderingInventoryScreen\b') {
+            $t = $t -replace '(?m)^import\s+net\.minecraft\.client\.gui\.screens\.inventory\.EffectRenderingInventoryScreen\s*;\r?\n', ''
         }
-        if ($t -notmatch '\bGuiGraphicsExtractor\b') {
-            $t = $t -replace 'import\s+net\.minecraft\.client\.gui\.GuiGraphicsExtractor\s*;\r?\n', ''
+        if ($bodyNoImp -notmatch '\bGuiGraphicsExtractor\b') {
+            $t = $t -replace '(?m)^import\s+net\.minecraft\.client\.gui\.GuiGraphicsExtractor\s*;\r?\n', ''
         }
 
         # CompoundTag 26.2 Optional accessors — only NBT variables, never Brigadier getDouble
@@ -3719,6 +3756,15 @@ Write-Ok ("Geometry-pass units: {0}; scaffold written: {1}" -f $geom.touched, $g
 Write-Step 'MCreator / NeoForge 1.21.x -> 26.2 pass (blocks GUI menus fluid overlay)'
 $m121 = if (Test-MigrationPass $sourceProfile 'mcreator-1.21.x') { Invoke-Mcreator1218ToNeoForge262Pass -Root $OutputPath } else { 0 }
 Write-Ok "1.21.x-touched $m121 Java file(s)"
+
+# MCreator 1.21.x can leave/reintroduce MobEffect + armor client leftovers after the earlier
+# 262-repair pass (applyEffectTick ServerLevel, renderInventoryText, registerItemExtensions stub).
+# Re-run compile repair so CASE-005 remaps stick on Mode B (idempotent for already-fixed files).
+if ($m121 -gt 0) {
+    Write-Step 'Minecraft 26.2 compile repair (post-MCreator leftover sweep)'
+    $compile262b = Invoke-Minecraft262CompileRepairPass -Root $OutputPath
+    Write-Ok "Post-MCreator compile-repair-touched $compile262b Java file(s)"
+}
 
 Write-Step 'MCreator 1.20.1 residue pass (overlay, food, SavedData, effects; MCP-verified SRG)'
 $m120 = if (Test-MigrationPass $sourceProfile 'mcreator-1.20.1') { Invoke-McreatorForge1201ResiduePass -Root $OutputPath } else { 0 }

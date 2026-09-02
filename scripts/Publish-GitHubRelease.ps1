@@ -7,9 +7,9 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$Tag = 'v2.10.3',
+    [string]$Tag = 'v2.10.4',
     [string]$Repo = 'RobbieB1980/LegacyJavaConverter',
-    [string]$Name = 'RB Legacy Java Converter 2.10.3'
+    [string]$Name = 'RB Legacy Java Converter 2.10.4'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -68,13 +68,13 @@ Converts **Forge/NeoForge 1.20.1–26.1** (and decompiled jars) → **NeoForge 2
 | ``RB-Legacy-Java-Converter-Setup.exe`` | Windows installer (self-contained; **embeds** portable toolset only) |
 | ``RB-Legacy-Java-Converter-Portable.zip`` | No install — extract and run ``Start-Converter.bat`` or the EXE |
 
-### What's new in 2.10.3
+### What's new in 2.10.4
 
-- **CASE-005 gecko_kings** Mode B remaps: ``register("id", FooBlock::new)`` → ``registerBlock`` when Properties ctor; acid/projectile ``submit``/``extractRenderState``; nested ``ArmorMaterial`` static rewrite
-- Hotfix: ``registerItemExtensions`` stub uses balanced braces + real newlines (no literal `` `r`n `` / orphaned method bodies)
-- Hotfix: ``EntityType.Builder.<AcidEntity>of`` for AbstractArrow factories; hardened ``applyEffectTick(ServerLevel,…)`` + strip removed ``renderInventoryText``
+- **CASE-005 Mode B leftover repair**: ``registerItemExtensions`` stub ungated from ``Registries.ARMOR_MATERIAL`` rewrite; brace-depth walker (fixes ``HumanoidModel.crouching/riding/young`` leftovers)
+- ``renderInventoryText`` / ``GuiGraphicsExtractor`` import strip is body-aware (no false keep from import lines)
+- Pipeline re-runs ``262-repair`` after ``mcreator-1.21.x`` so ``applyEffectTick(ServerLevel,…)`` sticks
 - Re-verified Test1 gecko_kings → ``gradlew build`` installable jar (~5.9MB; 80 renderers / 43 models / 93 procedures)
-- Includes 2.10.0–2.10.2 CASE-005 full restore + Fix-in-Grok handoff tooling
+- Includes 2.10.0–2.10.3 CASE-005 remaps + Fix-in-Grok handoff tooling
 
 ### Requirements
 
