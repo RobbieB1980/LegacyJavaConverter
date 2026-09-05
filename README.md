@@ -1,6 +1,6 @@
 # Legacy Java Converter
 
-**Current release: v2.10.3**
+**Current release: v2.10.6**
 
 Windows GUI and PowerShell migration assistant for **Forge/NeoForge 1.20.1+** → **NeoForge 26.2** ModDevGradle projects.
 

@@ -1,3 +1,19 @@
+## 2.10.6 — 2026-09-04 / 2026-09-05
+
+CASE-005 in-game bootstrap crash on NeoForge 26.2.0.72:
+
+- `GeckoKingsAvpModModGameRules.<clinit>` called `GameRules.registerBoolean("spawnHellishXenomorphs", …)` during AutomaticEventSubscriber class load.
+- `BuiltInRegistries.GAME_RULE` is already frozen → `IllegalStateException: Registry is already frozen` (key landed in `minecraft:` because the name had no namespace).
+- 2.10.5 compile remap was the cause: MCreator `FMLCommonSetupEvent` + `GameRules.register` became static `registerBoolean`, which compiles but crashes at constructMods.
+- Fix: `Invoke-Minecraft262CustomGameRuleDeferredRegister` (from 262-repair) matches MCreator **26.1.2** — `DeferredRegister.create(Registries.GAME_RULE, MODID)`, `new GameRule<>()` supplier, `REGISTRY.register(modEventBus)`, use-site `.get()` on DeferredHolder.
+- Re-verified: Test1 `gradlew build` → `gecko_kings_avp_mod-24.5+mc26.2-neoforge.jar` (~5.9MB). Copied into the 26.2.0.72 instance mods folder.
+- In-game follow-up (same day): GameRules freeze gone; next crash was `Block id not set` (`PathogenVialBlock`) and `Item id not set` (`XenomorphChitinArmorItem$Helmet`). `Invoke-BlockItemIdPass` missed multiline `super(Properties.of())`, extra super-args (Door/Stairs/Flower/Liquid/Button), armor inner `new Properties()`, and `Outer.Inner::new` method-refs. Two-pass ctor-then-`registerBlock`/`registerItem` (MCreator 26.1.2). `mels_deco:empty_basket` unbound looked like a cascade after gecko_kings failed the BLOCK RegisterEvent.
+- World create/join: `Unbound tags in registry … biome: [forge:is_cave]` from `xenomorph_boiler_biome_modifier.json`. NeoForge 26.2 `Tags.Biomes.IS_CAVE` is `c:is_cave`. `Invoke-ForgeConventionTagRewritePass` after asset restore (`#forge:` → `#c:`). mels_deco `minecraft:chain`/`potion` tag misses logged as non-fatal.
+- Creative menu purple/black: 26.2 removed `minecraft:item/template_spawn_egg` (`Missing block model: minecraft:item/template_spawn_egg`). gecko_kings tab is ~61 spawn eggs still using that parent. `Invoke-Minecraft262ItemModelPass` restores a 1.21.1 two-layer template into the mod namespace and namespaces `item/`/`block/` parents to `minecraft:`.
+- World tick crash: `Can't find attribute minecraft:tempt_range` on `ChestbursterEntity` (`TemptGoal.canUse`). `Mob.createMobAttributes()` omits `Attributes.TEMPT_RANGE` (default 10). 262-repair adds it whenever `TemptGoal` is present (12 chestburster variants).
+- **2026-09-05 in-game verified:** NeoForge 26.2.0.72 load + world join + clean exit (no FATAL / GameRules / TEMPT_RANGE). Remaining noise was recipe parse errors.
+- Recipe cleanup: `Invoke-Minecraft262RecipeIngredientPass` rewrites legacy `{"item":"id"}` / `{"tag":"id"}` ingredient objects to plain `"id"` / `"#id"` strings (MCreator 26.1.x datapack shape; 26.2 `Ingredient.CODEC`). Test1 39 recipes rewritten → rebuild → mods jar refreshed. Duplicate `medsystem-2.12.1` removed (2.13.0 kept).
+
 ## 2.10.5 — 2026-09-03
 
 Installer regression root cause (why hand-repair went green, Mode B failed again):

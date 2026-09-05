@@ -1513,12 +1513,193 @@ function Invoke-MinecraftEntitySubpackageRemapPass {
     return $touched
 }
 
+function Invoke-Minecraft262CustomGameRuleDeferredRegister {
+    <#
+    .SYNOPSIS
+      Custom GameRules must not call GameRules.registerBoolean/register in <clinit> or
+      FMLCommonSetupEvent — BuiltInRegistries.GAME_RULE is frozen by mod construction
+      (gecko_kings crash: spawnHellishXenomorphs). Match MCreator 26.1.2:
+      DeferredRegister.create(Registries.GAME_RULE, MODID) + new GameRule<>() supplier,
+      register REGISTRY on the mod bus, and .get() DeferredHolder at use sites.
+    #>
+    param([string]$Root)
+
+    $javaRoot = Join-Path $Root 'src\main\java'
+    if (-not (Test-Path -LiteralPath $javaRoot)) { return 0 }
+    $nl = [Environment]::NewLine
+    $touched = 0
+    $converted = New-Object System.Collections.Generic.List[object]
+
+    foreach ($file in @(Get-ChildItem -LiteralPath $javaRoot -Recurse -File -Filter '*.java' -ErrorAction SilentlyContinue)) {
+        $t = [IO.File]::ReadAllText($file.FullName)
+        $cm = [regex]::Match($t, 'public\s+class\s+(\w*GameRules)\b')
+        if (-not $cm.Success) { continue }
+        $className = $cm.Groups[1].Value
+        $pkg = [regex]::Match($t, '(?m)^package\s+([^;]+)').Groups[1].Value
+        $alreadyDeferred = ($t -match 'DeferredRegister\.create\(\s*Registries\.GAME_RULE') -and ($t -match '(?m)^import\s+net\.minecraft\.core\.registries\.Registries\s*;')
+        $hasCustomRegister = $t -match 'GameRules\.register(Boolean|Integer)?' -or $t -match 'BooleanValue\.create' -or $t -match 'IntegerValue\.create' -or $t -match '=\s*registerBoolean\s*\(' -or $t -match '=\s*registerInteger\s*\('
+        if (-not $alreadyDeferred -and -not $hasCustomRegister) { continue }
+
+        $ruleMap = [ordered]@{}
+        foreach ($m in [regex]::Matches($t, 'GameRule<\s*Boolean\s*>\s*(?:>\s+)?([A-Z0-9_]+)\s*=\s*(?:GameRules\.)?registerBoolean\s*\(\s*"([^"]+)"\s*,\s*GameRuleCategory\.([A-Z_]+)\s*,\s*(true|false)\s*\)')) {
+            if (-not $ruleMap.Contains($m.Groups[1].Value)) {
+                $ruleMap[$m.Groups[1].Value] = @{ Id = $m.Groups[2].Value; Category = $m.Groups[3].Value; Kind = 'bool'; Default = $m.Groups[4].Value }
+            }
+        }
+        foreach ($m in [regex]::Matches($t, '([A-Z0-9_]+)\s*=\s*GameRules\.register\s*\(\s*"([^"]+)"\s*,\s*(?:GameRules\.)?Category\.([A-Z_]+)\s*,\s*(?:GameRules\.)?BooleanValue\.create\s*\(\s*(true|false)\s*\)')) {
+            if (-not $ruleMap.Contains($m.Groups[1].Value)) {
+                $ruleMap[$m.Groups[1].Value] = @{ Id = $m.Groups[2].Value; Category = $m.Groups[3].Value; Kind = 'bool'; Default = $m.Groups[4].Value }
+            }
+        }
+        foreach ($m in [regex]::Matches($t, 'GameRule<\s*Integer\s*>\s*(?:>\s+)?([A-Z0-9_]+)\s*=\s*(?:GameRules\.)?registerInteger\s*\(\s*"([^"]+)"\s*,\s*GameRuleCategory\.([A-Z_]+)\s*,\s*(-?\d+)')) {
+            if (-not $ruleMap.Contains($m.Groups[1].Value)) {
+                $ruleMap[$m.Groups[1].Value] = @{ Id = $m.Groups[2].Value; Category = $m.Groups[3].Value; Kind = 'int'; Default = $m.Groups[4].Value }
+            }
+        }
+        foreach ($m in [regex]::Matches($t, '([A-Z0-9_]+)\s*=\s*GameRules\.register\s*\(\s*"([^"]+)"\s*,\s*(?:GameRules\.)?Category\.([A-Z_]+)\s*,\s*(?:GameRules\.)?IntegerValue\.create\s*\(\s*(-?\d+)\s*\)')) {
+            if (-not $ruleMap.Contains($m.Groups[1].Value)) {
+                $ruleMap[$m.Groups[1].Value] = @{ Id = $m.Groups[2].Value; Category = $m.Groups[3].Value; Kind = 'int'; Default = $m.Groups[4].Value }
+            }
+        }
+        $deferredFields = New-Object System.Collections.Generic.List[string]
+        foreach ($m in [regex]::Matches($t, 'DeferredHolder<\s*GameRule<\s*\?>\s*,\s*GameRule<\s*(?:Boolean|Integer)\s*>\s*>\s+([A-Z0-9_]+)')) {
+            if (-not $deferredFields.Contains($m.Groups[1].Value)) { [void]$deferredFields.Add($m.Groups[1].Value) }
+        }
+
+        $javaModName = $className -replace 'GameRules$', ''
+        $modidExpr = "$javaModName.MODID"
+        $modJava = @(Get-ChildItem -LiteralPath $javaRoot -Recurse -File -Filter "$javaModName.java" -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq "$javaModName.java" } | Select-Object -First 1)
+        $hasModClass = $modJava.Count -gt 0
+        if (-not $hasModClass) {
+            $modidLiteral = $null
+            foreach ($mf in @(Get-ChildItem -LiteralPath $javaRoot -Recurse -File -Filter '*.java' -ErrorAction SilentlyContinue)) {
+                $mtxt = [IO.File]::ReadAllText($mf.FullName)
+                $mm = [regex]::Match($mtxt, 'public\s+static\s+final\s+String\s+MODID\s*=\s*"([^"]+)"')
+                if ($mm.Success) { $modidLiteral = $mm.Groups[1].Value; break }
+            }
+            if ($modidLiteral) { $modidExpr = '"' + $modidLiteral + '"' }
+        }
+
+        if (-not $alreadyDeferred) {
+            if ($ruleMap.Count -eq 0) { continue }
+            $hasBool = @($ruleMap.GetEnumerator() | Where-Object { $_.Value.Kind -eq 'bool' }).Count -gt 0
+            $hasInt = @($ruleMap.GetEnumerator() | Where-Object { $_.Value.Kind -eq 'int' }).Count -gt 0
+            $sb = New-Object System.Text.StringBuilder
+            [void]$sb.Append("package $pkg;$nl$nl")
+            if ($hasBool) { [void]$sb.Append("import com.mojang.brigadier.arguments.BoolArgumentType;$nl") }
+            if ($hasInt) { [void]$sb.Append("import com.mojang.brigadier.arguments.IntegerArgumentType;$nl") }
+            [void]$sb.Append("import com.mojang.serialization.Codec;$nl")
+            if ($hasModClass -and $modidExpr -match '\.MODID$') {
+                $parentPkg = $pkg -replace '\.init$', ''
+                [void]$sb.Append("import $parentPkg.$javaModName;$nl")
+            }
+            [void]$sb.Append(@"
+import net.minecraft.core.registries.Registries;
+import net.minecraft.world.flag.FeatureFlagSet;
+import net.minecraft.world.level.gamerules.GameRule;
+import net.minecraft.world.level.gamerules.GameRuleCategory;
+import net.minecraft.world.level.gamerules.GameRuleType;
+import net.minecraft.world.level.gamerules.GameRuleTypeVisitor;
+import net.neoforged.neoforge.registries.DeferredHolder;
+import net.neoforged.neoforge.registries.DeferredRegister;
+
+public class $className {
+   public static final DeferredRegister<GameRule<?>> REGISTRY = DeferredRegister.create(Registries.GAME_RULE, $modidExpr);
+
+"@)
+            foreach ($entry in $ruleMap.GetEnumerator()) {
+                $n = $entry.Key
+                $r = $entry.Value
+                [void]$deferredFields.Add($n)
+                if ($r.Kind -eq 'int') {
+                    [void]$sb.Append("   public static final DeferredHolder<GameRule<?>, GameRule<Integer>> $n = registerInteger(`"$($r.Id)`", GameRuleCategory.$($r.Category), $($r.Default));$nl")
+                } else {
+                    [void]$sb.Append("   public static final DeferredHolder<GameRule<?>, GameRule<Boolean>> $n = registerBoolean(`"$($r.Id)`", GameRuleCategory.$($r.Category), $($r.Default));$nl")
+                }
+            }
+            if ($hasBool) {
+                [void]$sb.Append(@"
+
+   private static DeferredHolder<GameRule<?>, GameRule<Boolean>> registerBoolean(String registryname, GameRuleCategory category, boolean value) {
+      return REGISTRY.register(registryname, () -> new GameRule<>(category, GameRuleType.BOOL, BoolArgumentType.bool(), GameRuleTypeVisitor::visitBoolean,
+            Codec.BOOL, b -> b ? 1 : 0, value, FeatureFlagSet.of()));
+   }
+"@)
+            }
+            if ($hasInt) {
+                [void]$sb.Append(@"
+
+   private static DeferredHolder<GameRule<?>, GameRule<Integer>> registerInteger(String registryname, GameRuleCategory category, int value) {
+      return REGISTRY.register(registryname, () -> new GameRule<>(category, GameRuleType.INT, IntegerArgumentType.integer(Integer.MIN_VALUE, Integer.MAX_VALUE),
+            GameRuleTypeVisitor::visitInteger, Codec.intRange(Integer.MIN_VALUE, Integer.MAX_VALUE), i -> i, value, FeatureFlagSet.of()));
+   }
+"@)
+            }
+            [void]$sb.Append("$nl}$nl")
+            $newText = $sb.ToString()
+            if ($newText -ne $t) {
+                [IO.File]::WriteAllText($file.FullName, $newText)
+                $touched++
+            }
+        }
+
+        $fieldNames = @($deferredFields)
+        if ($fieldNames.Count -eq 0) { $fieldNames = @($ruleMap.Keys) }
+        if ($fieldNames.Count -gt 0) {
+            [void]$converted.Add([pscustomobject]@{ ClassName = $className; Package = $pkg; Fields = $fieldNames })
+        }
+    }
+
+    foreach ($conv in $converted) {
+        $className = $conv.ClassName
+        $pkg = $conv.Package
+        $fieldAlt = ($conv.Fields | ForEach-Object { [regex]::Escape($_) }) -join '|'
+        if ([string]::IsNullOrWhiteSpace($fieldAlt)) { continue }
+        $useRx = [regex]::new("(?<![\w.])$([regex]::Escape($className))\.(?:$fieldAlt)(?!\s*\.get\s*\()")
+        foreach ($file in @(Get-ChildItem -LiteralPath $javaRoot -Recurse -File -Filter '*.java' -ErrorAction SilentlyContinue)) {
+            if ($file.Name -eq "$className.java") { continue }
+            $u = [IO.File]::ReadAllText($file.FullName)
+            $orig = $u
+            $u = $useRx.Replace($u, '$0.get()')
+            $isMod = $u -match '@Mod\s*\(' -and $u -match '\.REGISTRY\.register\s*\(\s*\w+\s*\)'
+            if ($isMod -and $u -notmatch [regex]::Escape("$className.REGISTRY.register")) {
+                $importStmt = "import $pkg.$className;"
+                if ($u -notmatch [regex]::Escape($importStmt)) {
+                    $initImports = [regex]::Matches($u, "(?m)^import\s+$([regex]::Escape($pkg))\.[A-Za-z0-9_]+;")
+                    if ($initImports.Count -gt 0) {
+                        $lastImp = $initImports[$initImports.Count - 1]
+                        $u = $u.Insert($lastImp.Index + $lastImp.Length, "$nl$importStmt")
+                    } else {
+                        $u = [regex]::Replace($u, '(?m)^(package\s+[^;]+;\s*)', "`$1${nl}$importStmt${nl}", 1)
+                    }
+                }
+                $regCalls = [regex]::Matches($u, '([A-Za-z0-9_.]+)\.REGISTRY\.register\(\s*(\w+)\s*\);')
+                if ($regCalls.Count -gt 0) {
+                    $last = $regCalls[$regCalls.Count - 1]
+                    $bus = $last.Groups[2].Value
+                    $lineStart = $u.LastIndexOf("`n", $last.Index)
+                    $indent = if ($lineStart -ge 0) { $u.Substring($lineStart + 1, $last.Index - $lineStart - 1) } else { '      ' }
+                    if ($indent -notmatch '^\s+$') { $indent = '      ' }
+                    $insert = "$indent$className.REGISTRY.register($bus);"
+                    $u = $u.Insert($last.Index + $last.Length, "$nl$insert")
+                }
+            }
+            if ($u -ne $orig) {
+                [IO.File]::WriteAllText($file.FullName, $u)
+                $touched++
+            }
+        }
+    }
+
+    return $touched
+}
+
 function Invoke-Minecraft262CompileRepairPass {
     <#
     .SYNOPSIS
       Post-1.21.11 / 26.2 compile repairs proven on gecko_kings:
       FogRenderer package, InteractionResult import, Tier→ToolMaterial,
-      GameRules BooleanValue/Key → GameRules.registerBoolean + GameRuleCategory,
+      custom GameRules → DeferredRegister(Registries.GAME_RULE) (not static registerBoolean),
       ArmorMaterial.Layer → 8-arg equipment record, DeferredSpawnEggItem → SpawnEggItem,
       SOUND_EVENT.get→getValue, HierarchicalModel animator strip, final renderToBuffer strip,
       Capabilities.FluidHandler stub, fluid fog API reshape.
@@ -1638,45 +1819,13 @@ function Invoke-Minecraft262CompileRepairPass {
             $t = $t -replace '(?<![\w.])Tier\b', 'ToolMaterial'
         }
 
-        # GameRules: Key<BooleanValue> + GameRules.register → GameRule + registerBoolean
-        if ($t -match 'GameRules\.(BooleanValue|Key|Category|IntegerValue)' -or $t -match 'Key<\s*BooleanValue\s*>' -or $t -match 'BooleanValue\.create') {
+        # Nested GameRules.BooleanValue/Key leftovers only (custom rules: DeferredRegister GAME_RULE)
+        if ($t -match 'import\s+net\.minecraft\.world\.level(\.gamerules)?\.GameRules\.(BooleanValue|IntegerValue|Category|Key)') {
             $t = $t -replace 'import\s+net\.minecraft\.world\.level\.gamerules\.GameRules\.BooleanValue\s*;\r?\n', ''
             $t = $t -replace 'import\s+net\.minecraft\.world\.level\.gamerules\.GameRules\.IntegerValue\s*;\r?\n', ''
             $t = $t -replace 'import\s+net\.minecraft\.world\.level\.gamerules\.GameRules\.Category\s*;\r?\n', ''
             $t = $t -replace 'import\s+net\.minecraft\.world\.level\.gamerules\.GameRules\.Key\s*;\r?\n', ''
             $t = $t -replace 'import\s+net\.minecraft\.world\.level\.GameRules\.(BooleanValue|IntegerValue|Category|Key)\s*;\r?\n', ''
-            if ($t -notmatch 'import\s+net\.minecraft\.world\.level\.gamerules\.GameRule\s*;') {
-                $t = [regex]::Replace($t, '(?m)^(package\s+[^;]+;\s*)',
-                    "`$1${nl}import net.minecraft.world.level.gamerules.GameRule;${nl}import net.minecraft.world.level.gamerules.GameRuleCategory;${nl}import net.minecraft.world.level.gamerules.GameRules;${nl}", 1)
-            }
-            # Field + register in setup → static final registerBoolean
-            $t = [regex]::Replace($t,
-                'public static Key<\s*BooleanValue\s*>\s*([A-Z0-9_]+)\s*;',
-                'public static final GameRule<Boolean> $1 = null;')
-            # Replace assignment GameRules.register("name", Category.X, BooleanValue.create(v))
-            $t = [regex]::Replace($t,
-                '([A-Z0-9_]+)\s*=\s*GameRules\.register\s*\(\s*"([^"]+)"\s*,\s*Category\.([A-Z_]+)\s*,\s*BooleanValue\.create\s*\(\s*(true|false)\s*\)\s*\)\s*;',
-                '/* moved to field init: $1 */')
-            # Better: rebuild fields from register lines before nulling
-            $boolRegs = [regex]::Matches($o, '([A-Z0-9_]+)\s*=\s*GameRules\.register\s*\(\s*"([^"]+)"\s*,\s*Category\.([A-Z_]+)\s*,\s*BooleanValue\.create\s*\(\s*(true|false)\s*\)\s*\)')
-            foreach ($br in $boolRegs) {
-                $fname = $br.Groups[1].Value
-                $rname = $br.Groups[2].Value
-                $cat = $br.Groups[3].Value
-                $def = $br.Groups[4].Value
-                $t = $t -replace "public static final GameRule<Boolean> $fname = null;",
-                    "public static final GameRule<Boolean> $fname = GameRules.registerBoolean(`"$rname`", GameRuleCategory.$cat, $def);"
-            }
-            # Drop FMLCommonSetupEvent gamerule registrar if emptied
-            $t = [regex]::Replace($t,
-                '(?s)\s*@SubscribeEvent\s*public static void registerGameRules\s*\(\s*FMLCommonSetupEvent\s+\w+\s*\)\s*\{(?:[^}]|/\*[^*]*\*/)*\}',
-                '')
-            if ($t -notmatch 'FMLCommonSetupEvent' -and $t -notmatch 'SubscribeEvent') {
-                $t = $t -replace 'import\s+net\.neoforged\.bus\.api\.SubscribeEvent\s*;\r?\n', ''
-                $t = $t -replace 'import\s+net\.neoforged\.fml\.common\.EventBusSubscriber\s*;\r?\n', ''
-                $t = $t -replace 'import\s+net\.neoforged\.fml\.event\.lifecycle\.FMLCommonSetupEvent\s*;\r?\n', ''
-                $t = $t -replace '@EventBusSubscriber\r?\n', ''
-            }
         }
 
         # ArmorMaterial.Layer MCreator constructor → 8-arg equipment record (Map.of defense)
@@ -2028,6 +2177,18 @@ public class $cls extends EntityRenderer<$entSimple, LivingEntityRenderState> {
             }
         }
 
+        # TemptGoal.canUse reads Attributes.TEMPT_RANGE (default 10). Mob.createMobAttributes()
+        # does not include it — chestburster tick crash: Can't find attribute minecraft:tempt_range.
+        if ($t -match 'new\s+TemptGoal\b' -and $t -match 'createAttributes\s*\(' -and $t -notmatch 'Attributes\.TEMPT_RANGE') {
+            $t = [regex]::Replace($t,
+                '(public static Builder createAttributes\(\) \{)([\s\S]*?)(\r?\n\s*return builder)',
+                {
+                    param($mm)
+                    if ($mm.Groups[2].Value -match 'TEMPT_RANGE') { return $mm.Value }
+                    return ($mm.Groups[1].Value + $mm.Groups[2].Value + "`r`n      builder = builder.add(Attributes.TEMPT_RANGE, 10.0);" + $mm.Groups[3].Value)
+                })
+        }
+
         # Projectile models: setupAnim(Entity,...) / multi-arg → setupAnim(LivingEntityRenderState)
         if ($file.Name -match 'Model' -and $t -match 'EntityModel<' -and $t -match 'setupAnim\(' -and $t -match 'Acid|Spit|Projectile|Arrow') {
             $t = $t -replace 'extends\s+EntityModel<\s*Entity\s*>', 'extends EntityModel<net.minecraft.client.renderer.entity.state.LivingEntityRenderState>'
@@ -2043,7 +2204,8 @@ public class $cls extends EntityRenderer<$entSimple, LivingEntityRenderState> {
         }
     }
 
-    return $touched
+    $gr = Invoke-Minecraft262CustomGameRuleDeferredRegister -Root $Root
+    return ($touched + $gr)
 }
 
 function Invoke-OptionalIntegrationExcludePass {
@@ -3016,67 +3178,77 @@ function Invoke-BlockItemIdPass {
       Minecraft 26.2 requires Block/Item Properties.setId before construction.
       DeferredRegister.Blocks.registerBlock / Items.registerItem inject the id.
       MCreator no-arg ctors that call Properties.of() / new Item.Properties() NPE:
-      "Block id not set" / "Item id not set" (TOWW crash 2026-08-23).
+      "Block id not set" / "Item id not set" (TOWW crash 2026-08-23; gecko_kings 2026-09-04).
     #>
     param([string]$Root)
 
-    $files = Get-ChildItem (Join-Path $Root 'src\main\java') -Recurse -Filter '*.java' -File -ErrorAction SilentlyContinue
+    $files = @(Get-ChildItem (Join-Path $Root 'src\main\java') -Recurse -Filter '*.java' -File -ErrorAction SilentlyContinue)
     $touched = 0
+
+    # Pass 1: rewrite no-arg ctors so type files are on disk before registry method-ref conversion.
     foreach ($f in $files) {
         $t = [System.IO.File]::ReadAllText($f.FullName)
         $o = $t
 
-        # Block: public Foo() { super(Properties.of().chain); } -> Foo(Properties properties) { super(properties.chain); }
+        # Block: public Foo() { super( [extra args,] Properties.of()... } including multiline / Door / Stairs / Flower / LiquidBlock
         $t = [regex]::Replace($t,
-            'public (\w+)\(\) \{\s*super\(Properties\.of\(\)',
-            'public $1(net.minecraft.world.level.block.state.BlockBehaviour.Properties properties) { super(properties')
+            '(?s)public (\w+)\(\) \{(\s*super\((?:[\s\S]*?))Properties\.of\(\)',
+            'public $1(net.minecraft.world.level.block.state.BlockBehaviour.Properties properties) {$2properties')
         $t = [regex]::Replace($t,
             'public (\w+)\(\) \{\s*super\(\(new BlockBehaviour\.Properties\(\)\)',
             'public $1(net.minecraft.world.level.block.state.BlockBehaviour.Properties properties) { super(properties')
 
-        # Item: public Foo() { super((new Item.Properties()).chain); }
+        # Item: public Foo() { super( [extra args,] new Properties()... } including armor inner + BucketItem
         $t = [regex]::Replace($t,
-            'public (\w+)\(\) \{\s*super\(\(new Item\.Properties\(\)\)',
-            'public $1(net.minecraft.world.item.Item.Properties properties) { super(properties')
+            '(?s)public (\w+)\(\) \{(\s*super\((?:[\s\S]*?))new (?:Item\.)?Properties\(\)',
+            'public $1(net.minecraft.world.item.Item.Properties properties) {$2properties')
 
-        # Registry field types so registerBlock/registerItem resolve
+        if ($t -ne $o) {
+            [System.IO.File]::WriteAllText($f.FullName, $t)
+            $touched++
+        }
+    }
+
+    # Pass 2: registry helpers (reads rewritten ctors from disk)
+    $blockRoot = Join-Path $Root 'src\main\java'
+    foreach ($f in $files) {
+        $t = [System.IO.File]::ReadAllText($f.FullName)
+        $o = $t
+
         $t = $t -replace 'public static final DeferredRegister<Block> REGISTRY', 'public static final DeferredRegister.Blocks REGISTRY'
         $t = $t -replace 'public static final DeferredRegister<Item> REGISTRY', 'public static final DeferredRegister.Items REGISTRY'
 
-        # Blocks: REGISTRY.register("id", () -> new FooBlock()) -> registerBlock("id", FooBlock::new)
         $t = [regex]::Replace($t,
             'REGISTRY\.register\("([^"]+)",\s*\(\)\s*->\s*new (\w+Block)\(\)\)',
             'REGISTRY.registerBlock("$1", $2::new)')
+        $t = [regex]::Replace($t,
+            'REGISTRY\.register\("([^"]+)",\s*\(\)\s*->\s*new (\w+Item)\(\)\)',
+            'REGISTRY.registerItem("$1", $2::new)')
 
-        # CASE-005: MCreator/decompile often emits FooBlock::new after Properties ctor rewrite.
-        # registerBlock injects setId; plain register(Supplier) only fits no-arg ctors.
-        # Convert method-ref register → registerBlock only when the target type takes Properties.
-        if ($t -match 'REGISTRY\.register\("[^"]+",\s*\w+::new\)') {
-            $blockRoot = Join-Path $Root 'src\main\java'
-            $t = [regex]::Replace($t, 'REGISTRY\.register\("([^"]+)",\s*(\w+)::new\)', {
+        if ($t -match 'REGISTRY\.register\(\s*"[^"]+"\s*,\s*[\w.]+::new') {
+            $t = [regex]::Replace($t, 'REGISTRY\.register\(\s*"([^"]+)"\s*,\s*([\w.]+)::new\s*\)', {
                 param($m)
                 $id = $m.Groups[1].Value
                 $typeName = $m.Groups[2].Value
-                $typeFile = Get-ChildItem -LiteralPath $blockRoot -Recurse -Filter ($typeName + '.java') -File -ErrorAction SilentlyContinue |
+                $simple = ($typeName -split '\.')[-1]
+                $outer = ($typeName -split '\.')[0]
+                $typeFile = Get-ChildItem -LiteralPath $blockRoot -Recurse -Filter ($outer + '.java') -File -ErrorAction SilentlyContinue |
                     Select-Object -First 1
                 if ($null -ne $typeFile) {
                     $typeText = [System.IO.File]::ReadAllText($typeFile.FullName)
-                    $hasPropsCtor = $typeText -match ('public\s+' + [regex]::Escape($typeName) + '\s*\(\s*(?:[\w.]+)?Properties\s+\w+\s*\)')
-                    $hasNoArgCtor = $typeText -match ('public\s+' + [regex]::Escape($typeName) + '\s*\(\s*\)')
+                    $hasPropsCtor = $typeText -match ('public\s+' + [regex]::Escape($simple) + '\s*\(\s*(?:[\w.]+)?Properties\s+\w+\s*\)')
+                    $hasNoArgCtor = $typeText -match ('public\s+' + [regex]::Escape($simple) + '\s*\(\s*\)')
                     if ($hasPropsCtor -and -not $hasNoArgCtor) {
-                        return ('REGISTRY.registerBlock("' + $id + '", ' + $typeName + '::new)')
+                        if ($typeName -match 'Block$') {
+                            return ('REGISTRY.registerBlock("' + $id + '", ' + $typeName + '::new)')
+                        }
+                        return ('REGISTRY.registerItem("' + $id + '", ' + $typeName + '::new)')
                     }
                 }
                 return $m.Value
             })
         }
 
-        # Items: REGISTRY.register("id", () -> new FooItem()) -> registerItem
-        $t = [regex]::Replace($t,
-            'REGISTRY\.register\("([^"]+)",\s*\(\)\s*->\s*new (\w+Item)\(\)\)',
-            'REGISTRY.registerItem("$1", $2::new)')
-
-        # SpawnEggItem(new Item.Properties())
         $t = [regex]::Replace($t,
             'REGISTRY\.register(?:Item)?\("([^"]+)",\s*\(\)\s*->\s*new SpawnEggItem\(new Item\.Properties\(\)\.spawnEgg\(([^)]+)\)\)\)',
             'REGISTRY.registerItem("$1", properties -> new SpawnEggItem(properties.spawnEgg($2)))')
@@ -3084,15 +3256,15 @@ function Invoke-BlockItemIdPass {
             'REGISTRY\.register(?:Item)?\("([^"]+_spawn_egg)",\s*\(\)\s*->\s*new SpawnEggItem\(new Item\.Properties\(\)\)\)',
             'REGISTRY.registerItem("$1", properties -> new SpawnEggItem(properties))')
 
-        # BlockItem helper used by MCreator *ModItems
-        $t = $t -replace 'REGISTRY\.register\(block\.getId\(\)\.getPath\(\),\s*\(\)\s*->\s*new BlockItem\(\(Block\)block\.get\(\),\s*new Item\.Properties\(\)\)\)',
-            'REGISTRY.registerItem(block.getId().getPath(), prop -> new BlockItem((Block)block.get(), prop))'
+        # MCreator 26.1.2 BlockItem helpers: registerItem injects setId into prop
+        $t = $t -replace 'REGISTRY\.register\(block\.getId\(\)\.getPath\(\),\s*\(\)\s*->\s*new BlockItem\(\(Block\)block\.get\(\),\s*(?:new Item\.Properties\(\)|properties)\)\)',
+            'REGISTRY.registerItem(block.getId().getPath(), prop -> new BlockItem((Block)block.get(), prop), () -> properties)'
+        $t = $t -replace 'REGISTRY\.register\(block\.getId\(\)\.getPath\(\),\s*\(\)\s*->\s*new DoubleHighBlockItem\(\(Block\)block\.get\(\),\s*(?:new Item\.Properties\(\)|properties)\)\)',
+            'REGISTRY.registerItem(block.getId().getPath(), prop -> new DoubleHighBlockItem((Block)block.get(), prop), () -> properties)'
 
-        # Custom helper used by source mods such as NextGen Furniture. A Supplier
-        # hides the registry key until after construction, which crashes in 26.2.
-        # Convert it to DeferredRegister.Blocks.registerBlock's keyed Properties
-        # function and likewise let DeferredRegister.Items inject the item id.
-        $t = Convert-CustomBlockRegistrationText -Text $t
+        if (Get-Command Convert-CustomBlockRegistrationText -ErrorAction SilentlyContinue) {
+            $t = Convert-CustomBlockRegistrationText -Text $t
+        }
 
         if ($t -ne $o) {
             [System.IO.File]::WriteAllText($f.FullName, $t)
@@ -3542,6 +3714,134 @@ function Restore-ModAssets {
     return 0
 }
 
+function Invoke-ForgeConventionTagRewritePass {
+    <#
+    .SYNOPSIS
+      Forge biome/item/block convention tags (`forge:is_cave`) are unbound on NeoForge 26.2.
+      Tags.Biomes.IS_CAVE is `c:is_cave` (Identifier.fromNamespaceAndPath("c", name)).
+      gecko_kings world-create crash: Unbound tags ... biome: [forge:is_cave].
+    #>
+    param([string]$Root)
+
+    $res = Join-Path $Root 'src\main\resources'
+    $java = Join-Path $Root 'src\main\java'
+    $touched = 0
+    $files = @()
+    if (Test-Path -LiteralPath $res) {
+        $files += @(Get-ChildItem -LiteralPath $res -Recurse -File -Include '*.json','*.mcmeta' -ErrorAction SilentlyContinue)
+    }
+    if (Test-Path -LiteralPath $java) {
+        $files += @(Get-ChildItem -LiteralPath $java -Recurse -File -Filter '*.java' -ErrorAction SilentlyContinue)
+    }
+    foreach ($f in $files) {
+        $t = [IO.File]::ReadAllText($f.FullName)
+        $o = $t
+        $t = $t.Replace('#forge:', '#c:')
+        $t = $t -replace '(?<![\w])forge:(is_[a-z0-9_/]+)', 'c:$1'
+        if ($t -ne $o) {
+            [IO.File]::WriteAllText($f.FullName, $t)
+            $touched++
+        }
+    }
+
+    $forgeTags = Join-Path $res 'data\forge\tags'
+    $cTags = Join-Path $res 'data\c\tags'
+    if (Test-Path -LiteralPath $forgeTags) {
+        New-Item -ItemType Directory -Path $cTags -Force | Out-Null
+        Copy-Item -Path (Join-Path $forgeTags '*') -Destination $cTags -Recurse -Force
+        $touched++
+    }
+    return $touched
+}
+
+function Invoke-Minecraft262RecipeIngredientPass {
+    <#
+    .SYNOPSIS
+      26.2 Ingredient.CODEC accepts a registry-name string (or #tag), not legacy {"item":"..."} / {"tag":"..."} objects.
+      MCreator 26.1.x datapack templates emit plain strings; 1.21.x jars still ship object ingredients → recipe parse errors.
+      Evidence: Exact_Version_Sources/NeoForge/26.2 SizedIngredient docs ("ingredient": "minecraft:apple");
+      MCreator generator-26.1.x datapack templates/recipe/crafting.json.ftl + smithing.json.ftl.
+    #>
+    param([string]$Root)
+
+    $dataRoot = Join-Path $Root 'src\main\resources\data'
+    if (-not (Test-Path -LiteralPath $dataRoot)) { return 0 }
+    $touched = 0
+    $recipeDirs = @(Get-ChildItem -LiteralPath $dataRoot -Recurse -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -eq 'recipe' -or $_.Name -eq 'recipes' })
+    foreach ($dir in $recipeDirs) {
+        foreach ($f in @(Get-ChildItem -LiteralPath $dir.FullName -Filter '*.json' -File -Recurse -ErrorAction SilentlyContinue)) {
+            $t = [IO.File]::ReadAllText($f.FullName)
+            $o = $t
+            # Pure single-key ingredient objects only (result stays {"id":...,"count":...}).
+            $t = [regex]::Replace($t, '\{\s*"item"\s*:\s*"([^"]+)"\s*\}', '"$1"')
+            $t = [regex]::Replace($t, '\{\s*"tag"\s*:\s*"#?([^"]+)"\s*\}', '"#$1"')
+            if ($t -ne $o) {
+                [IO.File]::WriteAllText($f.FullName, $t)
+                $touched++
+            }
+        }
+    }
+    return $touched
+}
+
+function Invoke-Minecraft262ItemModelPass {
+    <#
+    .SYNOPSIS
+      26.2 removed minecraft:item/template_spawn_egg (gecko_kings creative tab is mostly spawn eggs → purple/black).
+      Namespace unprefixed item/block model parents and restore a two-layer spawn-egg template from 1.21.1.
+    #>
+    param([string]$Root, [string]$ToolRoot)
+
+    $assetsRoot = Join-Path $Root 'src\main\resources\assets'
+    if (-not (Test-Path -LiteralPath $assetsRoot)) { return 0 }
+    $pack = Join-Path $ToolRoot 'lib\client-items'
+    $eggPng = Join-Path $pack 'spawn_egg.png'
+    $ovlPng = Join-Path $pack 'spawn_egg_overlay.png'
+    $touched = 0
+
+    foreach ($nsDir in @(Get-ChildItem -LiteralPath $assetsRoot -Directory -ErrorAction SilentlyContinue)) {
+        $modid = $nsDir.Name
+        $modelsItem = Join-Path $nsDir.FullName 'models\item'
+        if (-not (Test-Path -LiteralPath $modelsItem)) { continue }
+        $usedTemplate = $false
+        foreach ($f in @(Get-ChildItem -LiteralPath $modelsItem -Filter '*.json' -File -ErrorAction SilentlyContinue)) {
+            $t = [IO.File]::ReadAllText($f.FullName)
+            $o = $t
+            if ($t -match '"parent"\s*:\s*"(?:minecraft:)?item/template_spawn_egg"') {
+                $usedTemplate = $true
+                $t = [regex]::Replace($t, '"parent"\s*:\s*"(?:minecraft:)?item/template_spawn_egg"', ('"parent": "' + $modid + ':item/template_spawn_egg"'))
+            }
+            $t = $t -replace '"parent"\s*:\s*"item/', '"parent": "minecraft:item/'
+            $t = $t -replace '"parent"\s*:\s*"block/', '"parent": "minecraft:block/'
+            if ($t -ne $o) {
+                [IO.File]::WriteAllText($f.FullName, $t)
+                $touched++
+            }
+        }
+        foreach ($f in @(Get-ChildItem -LiteralPath (Join-Path $nsDir.FullName 'models\block') -Filter '*.json' -File -ErrorAction SilentlyContinue)) {
+            $t = [IO.File]::ReadAllText($f.FullName)
+            $o = $t
+            $t = $t -replace '"parent"\s*:\s*"item/', '"parent": "minecraft:item/'
+            $t = $t -replace '"parent"\s*:\s*"block/', '"parent": "minecraft:block/'
+            if ($t -ne $o) {
+                [IO.File]::WriteAllText($f.FullName, $t)
+                $touched++
+            }
+        }
+        if ($usedTemplate -and (Test-Path -LiteralPath $eggPng) -and (Test-Path -LiteralPath $ovlPng)) {
+            $texDir = Join-Path $nsDir.FullName 'textures\item'
+            New-Item -ItemType Directory -Path $texDir -Force | Out-Null
+            Copy-Item -LiteralPath $eggPng -Destination (Join-Path $texDir 'spawn_egg.png') -Force
+            Copy-Item -LiteralPath $ovlPng -Destination (Join-Path $texDir 'spawn_egg_overlay.png') -Force
+            $tmpl = "{`n  `"parent`": `"minecraft:item/generated`",`n  `"textures`": {`n    `"layer0`": `"${modid}:item/spawn_egg`",`n    `"layer1`": `"${modid}:item/spawn_egg_overlay`"`n  }`n}`n"
+            [IO.File]::WriteAllText((Join-Path $modelsItem 'template_spawn_egg.json'), $tmpl)
+            $touched++
+        }
+    }
+    return $touched
+}
+
 function Ensure-ClientItems {
     param([string]$Root)
     $assets = Join-Path $Root 'src\main\resources\assets'
@@ -3827,9 +4127,21 @@ Write-Step 'Restore assets/data (decompiled trees are often Java-only)'
 $assetsRestored = Restore-ModAssets -Source $Source -Dest $OutputPath -ModId $meta.mod_id -OriginalJarPath $OriginalJarPath
 Write-Ok "Asset restore units: $assetsRestored"
 
+Write-Step 'Forge convention tags -> c: (biome is_cave unbound on world create)'
+$forgeTags = Invoke-ForgeConventionTagRewritePass -Root $OutputPath
+Write-Ok "Forge-tag-rewrite-touched $forgeTags file(s)"
+
+Write-Step '26.2 recipe ingredients: {"item"/"tag"} objects -> id / #tag strings'
+$recipeIng = Invoke-Minecraft262RecipeIngredientPass -Root $OutputPath
+Write-Ok "Recipe-ingredient-touched $recipeIng file(s)"
+
 Write-Step 'Client item stubs (if models/item exist)'
 $ci = Ensure-ClientItems -Root $OutputPath
 Write-Ok "Created $ci client item file(s)"
+
+Write-Step '26.2 item model parents + restore template_spawn_egg'
+$itemModels = Invoke-Minecraft262ItemModelPass -Root $OutputPath -ToolRoot $ToolRoot
+Write-Ok "Item-model-touched $itemModels file(s)"
 
 Write-Step 'Gradle wrapper'
 Install-WrapperFromTowwOrMdk -Root $OutputPath

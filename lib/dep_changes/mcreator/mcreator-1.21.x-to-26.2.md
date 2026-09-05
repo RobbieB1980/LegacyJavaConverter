@@ -26,9 +26,11 @@
 | `mc-121-entity-type-tag` | signature_changed | `getType().is(TagKey)` → `builtInRegistryHolder().is` (multiline) | 262-repair | CASE-005 |
 | `mc-121-thrown-splash` | replaced_by | `AbstractThrownPotion` → `ThrownSplashPotion` / `SPLASH_POTION` | 262-repair | CASE-005 |
 | `mc-121-gamerules-serverlevel` | signature_changed | Spawn GameRules via `ServerLevel.getGameRules()` | 262-repair | CASE-005 |
+| `mc-121-gamerules-deferred` | replaced_by | Custom rules: `DeferredRegister(Registries.GAME_RULE)` + `new GameRule<>()`; never static `GameRules.registerBoolean` (frozen registry) | 262-repair | CASE-005 / MCreator 26.1.2 |
 
 ## Provenance
 
 - Solved: CASE-003 Mel's DeCo 1.21.4, REN-004, LEARNINGS Band A, MOAdecor BATH 1.21.8, CASE-005 gecko_kings_avp_mod 1.21.1 (compile-green)
 - Station upstream: `knowledge/_upstream/mcreator` @ see `_STATUS.json`
 - Catalog: `MCreator-generator-delta-catalog.md`
+- 262-repair retrieval tree (outside converter): `C:\rmblocal_llm\knowledge\262r`

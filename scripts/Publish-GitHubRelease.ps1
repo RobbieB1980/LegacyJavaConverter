@@ -3,13 +3,13 @@
   Create/update a GitHub Release and upload portable + setup artifacts from dist/.
 
 .EXAMPLE
-  .\scripts\Publish-GitHubRelease.ps1 -Tag v2.10.5
+  .\scripts\Publish-GitHubRelease.ps1 -Tag v2.10.6
 #>
 [CmdletBinding()]
 param(
-    [string]$Tag = 'v2.10.5',
+    [string]$Tag = 'v2.10.6',
     [string]$Repo = 'RobbieB1980/LegacyJavaConverter',
-    [string]$Name = 'RB Legacy Java Converter 2.10.5'
+    [string]$Name = 'RB Legacy Java Converter 2.10.6'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -68,13 +68,13 @@ Converts **Forge/NeoForge 1.20.1–26.1** (and decompiled jars) → **NeoForge 2
 | ``RB-Legacy-Java-Converter-Setup.exe`` | Windows installer (self-contained; **embeds** portable toolset only) |
 | ``RB-Legacy-Java-Converter-Portable.zip`` | No install — extract and run ``Start-Converter.bat`` or the EXE |
 
-### What's new in 2.10.5
+### What's new in 2.10.6
 
-- **Installer regression fix**: CASE-005 ``applyEffectTick(ServerLevel,…)`` + ``renderInventoryText`` strip now live in ``Invoke-Minecraft262CompileRepairPass`` (every route)
-- Root cause: those remaps were only on ``Invoke-McreatorForge1201ResiduePass`` (gated ``mcreator-1.20.1``), so NeoForge **1.21.x** Mode B skipped them — hand-repaired folders went green, fresh installer runs failed again with the same 9 potion errors
-- Residue pass keeps an idempotent copy for true 1.20.1 MCreator jobs
-- Re-verified Test1 gecko_kings → ``gradlew build`` → ``gecko_kings_avp_mod-24.5+mc26.2-neoforge.jar`` (~5.9MB; 80/43/93)
-- Includes 2.10.0–2.10.4 CASE-005 remaps + Fix-in-Grok handoff tooling
+- **CASE-005 in-game verified** on NeoForge 26.2.0.72 (load + world join + clean exit)
+- Custom GameRules via ``DeferredRegister(Registries.GAME_RULE)`` + ``new GameRule<>`` (static ``GameRules.registerBoolean`` froze the registry)
+- Hardened ``registerBlock`` / ``registerItem`` id pass; ``#forge:`` → ``#c:`` tags; spawn-egg template restore; ``Attributes.TEMPT_RANGE`` for TemptGoal entities
+- **Recipe ingredient cleanup**: ``{"item":"id"}`` / ``{"tag":"id"}`` → ``"id"`` / ``"#id"`` (``Invoke-Minecraft262RecipeIngredientPass``)
+- Includes 2.10.0–2.10.5 CASE-005 remaps + Fix-in-Grok handoff tooling
 
 ### Requirements
 
