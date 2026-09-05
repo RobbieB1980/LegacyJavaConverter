@@ -7,9 +7,9 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$Tag = 'v2.10.9',
+    [string]$Tag = 'v2.10.10',
     [string]$Repo = 'RobbieB1980/LegacyJavaConverter',
-    [string]$Name = 'RB Legacy Java Converter 2.10.9'
+    [string]$Name = 'RB Legacy Java Converter 2.10.10'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -59,23 +59,20 @@ function Invoke-GitHubJson([string]$Method, [string]$Uri, [hashtable]$BodyObj = 
 $notes = @"
 ## RB Legacy Java Converter $Tag
 
-Converts **Forge/NeoForge 1.20.1–26.1** (and decompiled jars) → **NeoForge 26.2** (default **26.2.0.72**).
+Converts **Forge/NeoForge 1.20.1â€“26.1** (and decompiled jars) â†’ **NeoForge 26.2** (default **26.2.0.72**).
 
 ### Downloads
 
 | File | Description |
 |------|-------------|
 | ``RB-Legacy-Java-Converter-Setup.exe`` | Windows installer (self-contained; **embeds** portable toolset only) |
-| ``RB-Legacy-Java-Converter-Portable.zip`` | No install — extract and run ``Start-Converter.bat`` or the EXE |
+| ``RB-Legacy-Java-Converter-Portable.zip`` | No install â€” extract and run ``Start-Converter.bat`` or the EXE |
 
-### What's new in 2.10.9
+### What's new in 2.10.10
 
-- Dual-version dependency pull: detected source MC jar + NeoForge 26.2 jar (`libs-source/` + `libs/`)
-- Import detection fix (JEI/`mezz.jei` SimpleMatch); soft-dep exclude keeps integrations when target jar present
-- Fix-in-Grok PromptFile pointer (no multiline bat truncation of FAILED OUTPUT path)
-- Capability stub multiline-safe; Easy Mob Farm CASE-006 compile-green remaps
-- Knowledge backup on GitHub: `knowledge-backup/262r` + solved CASE notes
-- 262r agent search order: converter/shards first before inventing remaps
+- CASE-006 Easy Mob Farm SolvedConversion overlay (BER render-state + helpers) and gametest DELETE
+- Soft-dep pass always deletes gametest Java sources + gradle exclude
+- FlyingMob/FlyingAnimal, cubemob/frog/CatVariants, modlauncher→FMLLoader, Item.Properties ctor dedupe encoded in converter passes
 
 ### Requirements
 
@@ -87,7 +84,7 @@ Converts **Forge/NeoForge 1.20.1–26.1** (and decompiled jars) → **NeoForge 2
 
 - Original input is never modified (always writes to output folder).
 - Setup installs under ``%LOCALAPPDATA%\RB-Legacy-Java-Converter`` by default (no admin required).
-- Detect source version → primer path → solved overlays/passes → ``gradlew build`` for installable jars.
+- Detect source version â†’ primer path â†’ solved overlays/passes â†’ ``gradlew build`` for installable jars.
 - Prefer official 26.2 mod jars when published; converter path is for when they are absent.
 "@
 

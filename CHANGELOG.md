@@ -1,4 +1,12 @@
-﻿## 2.10.9 — 2026-09-05
+﻿## 2.10.10 - 2026-09-05
+
+- CASE-006 Easy Mob Farm overlay: `lib/overlays/easy-mob-farm/1.21.4` (BER render-state, FlyingMob helpers, modlauncher→FMLLoader, cubemob/frog, capture-card ctors, bonus config) + gametest `DELETE.txt`
+- `Invoke-OptionalIntegrationExcludePass`: always delete `**/gametest/**/*.java` and write gradle exclude (not gated on soft-dep deletes)
+- Entity-subpackage: Slime/MagmaCube→cubemob, Frog/FrogVariant(s), CatVariant(s)
+- Compile-repair: FlyingMob/FlyingAnimal leaf heuristic, CatVariants/FrogVariants constants, modlauncher→FMLLoader
+- Block/Item id pass: skip/dedupe duplicate `Item.Properties` constructors
+- SolvedConversionIndex: `CASE-006-easy-mob-farm-1.21.4`
+## 2.10.9 — 2026-09-05
 
 Easy Mob Farm (CASE-006) + dependency/knowledge hardening:
 
@@ -396,5 +404,6 @@ Proven on **Friend** (runtime) and **The Knocker** (NeoForge 1.21.8 jar Ã¢â�
 
 ## 1.1.x and earlier
 See git history for initial GUI, jar pipeline, and Forge 1.20.1 scaffold support.
+
 
 

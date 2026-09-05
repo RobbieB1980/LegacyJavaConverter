@@ -11,9 +11,9 @@
     <ApplicationIcon>..\..\assets\app.ico</ApplicationIcon>
     <Product>RB Legacy Java Converter</Product>
     <Company>RobbieB1980</Company>
-    <Version>2.10.9</Version>
-    <FileVersion>2.10.9</FileVersion>
-    <InformationalVersion>2.10.9</InformationalVersion>
+    <Version>2.10.10</Version>
+    <FileVersion>2.10.10</FileVersion>
+    <InformationalVersion>2.10.10</InformationalVersion>
     <Description>Convert Forge 1.20.1 / NeoForge 1.21.x Java mod jars and workspaces to NeoForge 26.2 scaffolds</Description>
   </PropertyGroup>
 

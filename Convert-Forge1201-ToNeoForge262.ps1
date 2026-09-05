@@ -1452,6 +1452,14 @@ function Invoke-MinecraftEntitySubpackageRemapPass {
         'net.minecraft.world.entity.monster.Bogged' = 'net.minecraft.world.entity.monster.skeleton.Bogged'
         'net.minecraft.world.entity.monster.Spider' = 'net.minecraft.world.entity.monster.spider.Spider'
         'net.minecraft.world.entity.monster.CaveSpider' = 'net.minecraft.world.entity.monster.spider.CaveSpider'
+        # CASE-006 Easy Mob Farm / 1.21.11 cubemob + frog + feline variants (26.2 physical source)
+        'net.minecraft.world.entity.monster.MagmaCube' = 'net.minecraft.world.entity.monster.cubemob.MagmaCube'
+        'net.minecraft.world.entity.monster.Slime' = 'net.minecraft.world.entity.monster.cubemob.Slime'
+        'net.minecraft.world.entity.animal.Frog' = 'net.minecraft.world.entity.animal.frog.Frog'
+        'net.minecraft.world.entity.animal.FrogVariant' = 'net.minecraft.world.entity.animal.frog.FrogVariant'
+        'net.minecraft.world.entity.animal.FrogVariants' = 'net.minecraft.world.entity.animal.frog.FrogVariants'
+        'net.minecraft.world.entity.animal.CatVariant' = 'net.minecraft.world.entity.animal.feline.CatVariant'
+        'net.minecraft.world.entity.animal.CatVariants' = 'net.minecraft.world.entity.animal.feline.CatVariants'
     }
 
     foreach ($file in @(Get-ChildItem -LiteralPath $javaRoot -Recurse -File -Filter '*.java' -ErrorAction SilentlyContinue)) {
@@ -1739,6 +1747,57 @@ function Invoke-Minecraft262CompileRepairPass {
         $t = $t -replace 'import\s+net\.minecraft\.world\.item\.InteractionResult\s*;', 'import net.minecraft.world.InteractionResult;'
         if ($t -match '(?<![\w.])InteractionResult\b' -and $t -notmatch 'import\s+net\.minecraft\.world\.InteractionResult\s*;') {
             $t = [regex]::Replace($t, '(?m)^(package\s+[^;]+;\s*)', "`$1${nl}import net.minecraft.world.InteractionResult;${nl}", 1)
+        }
+
+        # CASE-006: FlyingMob / FlyingAnimal removed (primers 1.21.6 / 26.2). Leaf heuristic:
+        # Ghast / HappyGhast / Phantom / Bee.isFlying() — omnidirectionalAirMover() is protected.
+        if ($t -match 'FlyingMob|FlyingAnimal') {
+            $t = $t -replace 'import\s+net\.minecraft\.world\.entity\.FlyingMob\s*;\r?\n', ''
+            $t = $t -replace 'import\s+net\.minecraft\.world\.entity\.animal\.FlyingAnimal\s*;\r?\n', ''
+            $t = $t -replace '(?<![\w.])(\w+)\s+instanceof\s+FlyingAnimal\s+(\w+)\s*&&\s*\2\.isFlying\s*\(\s*\)',
+                '($1 instanceof Ghast || $1 instanceof HappyGhast || $1 instanceof Phantom || $1 instanceof Bee bee && bee.isFlying())'
+            $t = $t -replace '(?<![\w.])(\w+)\s+instanceof\s+FlyingMob\b',
+                '($1 instanceof Ghast || $1 instanceof HappyGhast || $1 instanceof Phantom)'
+            $t = $t -replace '(?<![\w.])(\w+)\s+instanceof\s+FlyingAnimal\b',
+                '($1 instanceof Bee bee && bee.isFlying())'
+            if ($t -match '\bGhast\b' -and $t -notmatch 'import\s+net\.minecraft\.world\.entity\.monster\.Ghast\s*;') {
+                $t = [regex]::Replace($t, '(?m)^(package\s+[^;]+;\s*)', "`$1${nl}import net.minecraft.world.entity.monster.Ghast;${nl}", 1)
+            }
+            if ($t -match '\bHappyGhast\b' -and $t -notmatch 'import\s+net\.minecraft\.world\.entity\.animal\.happyghast\.HappyGhast\s*;') {
+                $t = [regex]::Replace($t, '(?m)^(package\s+[^;]+;\s*)', "`$1${nl}import net.minecraft.world.entity.animal.happyghast.HappyGhast;${nl}", 1)
+            }
+            if ($t -match '\bPhantom\b' -and $t -notmatch 'import\s+net\.minecraft\.world\.entity\.monster\.Phantom\s*;') {
+                $t = [regex]::Replace($t, '(?m)^(package\s+[^;]+;\s*)', "`$1${nl}import net.minecraft.world.entity.monster.Phantom;${nl}", 1)
+            }
+            if ($t -match '\bBee\b' -and $t -notmatch 'import\s+net\.minecraft\.world\.entity\.animal\.bee\.Bee\s*;') {
+                $t = [regex]::Replace($t, '(?m)^(package\s+[^;]+;\s*)', "`$1${nl}import net.minecraft.world.entity.animal.bee.Bee;${nl}", 1)
+            }
+        }
+
+        # CASE-006: CatVariant.X / FrogVariant.X constants → CatVariants / FrogVariants ResourceKeys
+        if ($t -match '(?<![\w.])CatVariant\.[A-Z_]+' -or $t -match '(?<![\w.])FrogVariant\.[A-Z_]+') {
+            $t = $t -replace '(?<![\w.])CatVariant\.([A-Z_]+)\b', 'CatVariants.$1'
+            $t = $t -replace '(?<![\w.])FrogVariant\.([A-Z_]+)\b', 'FrogVariants.$1'
+            if ($t -match '\bCatVariants\b' -and $t -notmatch 'import\s+net\.minecraft\.world\.entity\.animal\.feline\.CatVariants\s*;') {
+                $t = [regex]::Replace($t, '(?m)^(package\s+[^;]+;\s*)', "`$1${nl}import net.minecraft.world.entity.animal.feline.CatVariants;${nl}", 1)
+            }
+            if ($t -match '\bFrogVariants\b' -and $t -notmatch 'import\s+net\.minecraft\.world\.entity\.animal\.frog\.FrogVariants\s*;') {
+                $t = [regex]::Replace($t, '(?m)^(package\s+[^;]+;\s*)', "`$1${nl}import net.minecraft.world.entity.animal.frog.FrogVariants;${nl}", 1)
+            }
+        }
+
+        # CASE-006: cpw.mods.modlauncher Launcher VERSION probe → FMLLoader production check
+        if ($t -match 'cpw\.mods\.modlauncher' -or $t -match 'Launcher\.INSTANCE\.environment') {
+            $t = $t -replace 'import\s+cpw\.mods\.modlauncher\.Launcher\s*;\r?\n', ''
+            $t = $t -replace 'import\s+cpw\.mods\.modlauncher\.api\.IEnvironment\.Keys\s*;\r?\n', ''
+            $t = $t -replace 'import\s+cpw\.mods\.modlauncher\.api\.TypesafeMap\.Key\s*;\r?\n', ''
+            $t = $t -replace 'import\s+java\.util\.Optional\s*;\r?\n', ''
+            $t = [regex]::Replace($t,
+                '(?s)Optional<\s*String\s*>\s+\w+\s*=\s*Launcher\.INSTANCE\.environment\(\)\.getProperty\s*\(\s*\(Key\)\s*Keys\.VERSION\.get\(\)\s*\)\s*;\s*if\s*\(\s*\w+\.isPresent\(\)\s*&&\s*"MOD_DEV"\.equals\(\s*\w+\.get\(\)\s*\)\s*\)\s*\{\s*DebugManager\.setDevelopmentEnvironment\s*\(\s*true\s*\)\s*;\s*\}',
+                'if (!FMLLoader.getCurrent().isProduction()) { DebugManager.setDevelopmentEnvironment(true); }')
+            if ($t -match 'FMLLoader' -and $t -notmatch 'import\s+net\.neoforged\.fml\.loading\.FMLLoader\s*;') {
+                $t = [regex]::Replace($t, '(?m)^(package\s+[^;]+;\s*)', "`$1${nl}import net.neoforged.fml.loading.FMLLoader;${nl}", 1)
+            }
         }
         # InteractionResultHolder removed — Item.use returns InteractionResult
         $t = $t -replace 'InteractionResultHolder<\s*ItemStack\s*>', 'InteractionResult'
@@ -2310,12 +2369,40 @@ function Invoke-OptionalIntegrationExcludePass {
         }
     }
 
-    if ($touched -gt 0) {
-        $bg = Join-Path $Root 'build.gradle'
-        if (Test-Path $bg) {
-            $g = [System.IO.File]::ReadAllText($bg)
-            if ($g -notmatch 'OPTIONAL_INTEGRATIONS_EXCLUDED') {
-                $excludeBlock = @"
+    # Always drop GameTest harness sources — annotations are not on the leaf compile classpath
+    # (262r soft-dep-exclude; CASE-006 Easy Mob Farm). Delete files + exclude, even when no soft-dep jars missing.
+    $javaRootForGt = Join-Path $Root 'src\main\java'
+    if (Test-Path -LiteralPath $javaRootForGt) {
+        foreach ($gtDir in @(Get-ChildItem -LiteralPath $javaRootForGt -Recurse -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq 'gametest' })) {
+            foreach ($gf in @(Get-ChildItem -LiteralPath $gtDir.FullName -Recurse -Filter '*.java' -File -ErrorAction SilentlyContinue)) {
+                Remove-Item -LiteralPath $gf.FullName -Force -ErrorAction SilentlyContinue
+                $touched++
+            }
+        }
+    }
+    $bg = Join-Path $Root 'build.gradle'
+    if (Test-Path $bg) {
+        $g = [System.IO.File]::ReadAllText($bg)
+        $gChanged = $false
+        if ($g -notmatch "exclude\s+'?\*\*/gametest/\*\*'?") {
+            if ($g -match "(?m)^sourceSets\.main\.java\s*\{") {
+                $g = $g -replace "(sourceSets\.main\.java\s*\{)", "`$1`r`n    exclude '**/gametest/**'"
+            }
+            else {
+                $g += "`r`n// GameTest harness not on leaf compile classpath (262r soft-dep-exclude).`r`nsourceSets.main.java {`r`n    exclude '**/gametest/**'`r`n}`r`n"
+            }
+            $gChanged = $true
+        }
+        if ($touched -gt 0 -and $g -notmatch 'OPTIONAL_INTEGRATIONS_EXCLUDED') {
+            if ($g -match "(?m)^sourceSets\.main\.java\s*\{") {
+                # already has java excludes (datagen); append more excludes inside if possible
+                if ($g -notmatch "exclude\s+'?\*\*/integration/carryon/\*\*'?") {
+                    $g = $g -replace "(sourceSets\.main\.java\s*\{)", "`$1`r`n    exclude '**/integration/carryon/**'`r`n    exclude '**/integration/sable/**'`r`n    exclude '**/compat/jei/**'"
+                    $gChanged = $true
+                }
+            }
+            else {
+                $g += @"
 
 // Soft-dep integrations removed when companion mods are absent (OPTIONAL_INTEGRATIONS_EXCLUDED.txt).
 sourceSets.main.java {
@@ -2323,15 +2410,11 @@ sourceSets.main.java {
     exclude '**/integration/sable/**'
 }
 "@
-                if ($g -match "(?m)^sourceSets\.main\.java\s*\{") {
-                    # already has java excludes (datagen); append more excludes inside if possible
-                    $g = $g -replace "(sourceSets\.main\.java\s*\{)", "`$1`r`n    exclude '**/integration/carryon/**'`r`n    exclude '**/integration/sable/**'`r`n    exclude '**/compat/jei/**'`r`n    exclude '**/gametest/**'"
-                }
-                else {
-                    $g += $excludeBlock
-                }
-                [System.IO.File]::WriteAllText($bg, $g)
+                $gChanged = $true
             }
+        }
+        if ($gChanged) {
+            [System.IO.File]::WriteAllText($bg, $g)
         }
     }
     return $touched
@@ -3249,9 +3332,24 @@ function Invoke-BlockItemIdPass {
             'public $1(net.minecraft.world.level.block.state.BlockBehaviour.Properties properties) { super(properties')
 
         # Item: public Foo() { super( [extra args,] new Properties()... } including armor inner + BucketItem
+        # Skip rewrite when a Properties ctor already exists — otherwise duplicate erasure
+        # (BlankMobCaptureCardItem / CreativeBlankMobCaptureCardItem on Easy Mob Farm).
+        $itemCtorMatches = @([regex]::Matches($t, '(?s)public (\w+)\(\) \{(\s*super\((?:[\s\S]*?))new (?:Item\.)?Properties\(\)'))
+        for ($mi = $itemCtorMatches.Count - 1; $mi -ge 0; $mi--) {
+            $m = $itemCtorMatches[$mi]
+            $cls = $m.Groups[1].Value
+            $hasPropsCtor = $t -match ("public\s+" + [regex]::Escape($cls) + "\s*\(\s*(?:net\.minecraft\.world\.item\.Item\.)?Properties\s+\w+\s*\)")
+            if ($hasPropsCtor) { continue }
+            $replacement = "public $cls(net.minecraft.world.item.Item.Properties properties) {$($m.Groups[2].Value)properties"
+            $t = $t.Remove($m.Index, $m.Length).Insert($m.Index, $replacement)
+        }
+        # Collapse FQN + short Properties ctor duplicates (same erasure).
         $t = [regex]::Replace($t,
-            '(?s)public (\w+)\(\) \{(\s*super\((?:[\s\S]*?))new (?:Item\.)?Properties\(\)',
-            'public $1(net.minecraft.world.item.Item.Properties properties) {$2properties')
+            '(?s)(public\s+(\w+)\s*\(\s*net\.minecraft\.world\.item\.Item\.Properties\s+\w+\s*\)\s*\{(?:[^{}]|\{[^{}]*\})*\})\s*public\s+\2\s*\(\s*Properties\s+\w+\s*\)\s*\{(?:[^{}]|\{[^{}]*\})*\}',
+            '$1')
+        $t = [regex]::Replace($t,
+            '(?s)(public\s+(\w+)\s*\(\s*Properties\s+\w+\s*\)\s*\{(?:[^{}]|\{[^{}]*\})*\})\s*public\s+\2\s*\(\s*net\.minecraft\.world\.item\.Item\.Properties\s+\w+\s*\)\s*\{(?:[^{}]|\{[^{}]*\})*\}',
+            '$1')
 
         if ($t -ne $o) {
             [System.IO.File]::WriteAllText($f.FullName, $t)

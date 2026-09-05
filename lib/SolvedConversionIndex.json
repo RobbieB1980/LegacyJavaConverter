@@ -171,6 +171,53 @@
                           "notes":  "CASE-005 full restore: gecko_kings_avp_mod-24.5+mc26.2-neoforge.jar (~5.9MB) with 80 renderers + 43 models + 93 procedures (datagen exclude only). Primers: entity-render-state submit/extractRenderState for acid projectiles (ArrowRenderer pattern; now in 262-repair); register(\"id\", FooBlock::new)->registerBlock when Properties ctor (block-item-id); ServerBossEvent UUID; customServerAiStep ServerLevel; ArmorMaterial static (nested RegisterEvent; registerItemExtensions stub uses balanced braces + real newlines); Builder.<AcidEntity>of for AbstractArrow factories; applyEffectTick(ServerLevel,…)+strip renderInventoryText MUST be in 262-repair (2.10.5; were wrongly only on mcreator-1.20.1 residue so 1.21.x Mode B skipped them); EntityType tag builtInRegistryHolder; ThrownSplashPotion; ServerLevel GameRules; MobEffects SLOWNESS/JUMP_BOOST. 2.10.6: custom GameRules MUST use DeferredRegister(Registries.GAME_RULE)+new GameRule<> (MCreator 26.1.2); static GameRules.registerBoolean freezes-crash at constructMods (spawnHellishXenomorphs); forge:is_cave->c:is_cave; spawn-egg template restore; TemptGoal TEMPT_RANGE; recipe ingredients {\"item\"}/{\"tag\"}->string/#tag (Invoke-Minecraft262RecipeIngredientPass). In-game verified 2026-09-05 on 26.2.0.72; recipes cleaned same day."
                       },
                       {
+                          "id":  "CASE-006-easy-mob-farm-1.21.4",
+                          "modIds":  [
+                                         "easy_mob_farm"
+                                     ],
+                          "sourceVersions":  [
+                                                 "1.21.4"
+                                             ],
+                          "routeHint":  "neoforge-1.21.x",
+                          "forcePasses":  [
+                                              "mechanical-java",
+                                              "neoforge-26-api",
+                                              "mcreator-1.21.x",
+                                              "registry",
+                                              "block-item-id",
+                                              "config-order",
+                                              "assets"
+                                          ],
+                          "forceRules":  [
+                                             "block-entity-value-io",
+                                             "legacy-datagen-isolation",
+                                             "game-rules-rewrite",
+                                             "block-entity-type-constructor",
+                                             "deferred-entity-type-registration",
+                                             "entity-server-damage",
+                                             "tristate-minecraft-util",
+                                             "projectile-arrow-package"
+                                         ],
+                          "transforms":  [
+                                             "custom-block-registration",
+                                             "client-package-moves",
+                                             "cutout-render-type"
+                                         ],
+                          "overlays":  [
+                                           {
+                                               "path":  "easy-mob-farm/1.21.4",
+                                               "requireAnyFile":  [
+                                                                      "src/main/java/de/markusbordihn/easymobfarm/EasyMobFarm.java",
+                                                                      "src/main/java/de/markusbordihn/easymobfarm/client/renderer/blockentity/MobFarmBlockEntityRenderer.java"
+                                                                  ]
+                                           }
+                                       ],
+                          "dependencyHints":  [
+                                                  "jei"
+                                              ],
+                          "notes":  "CASE-006: Easy Mob Farm NeoForge 1.21.4 → 26.2. Overlay supplies BER render-state + FlyingMob leaf heuristic + modlauncher→FMLLoader + cubemob/frog variants + Item.Properties ctor shapes + MobFarmBonusConfig lazy ItemStacks; DELETE.txt drops gametest harness. Also encoded in 262r compile-repair / entity-subpackage / soft-dep-exclude. Proven jars: easy_mob_farm-10.3.0+mc26.2-neoforge.jar and tet/test-26.2 easy_mob_farm-1.0.0+mc26.2-neoforge.jar."
+                      },
+                      {
                           "id":  "CASE-002-friend-1.20.1",
                           "modIds":  [
                                          "friend"
