@@ -1,20 +1,28 @@
-# GokuAI Fix-in-Grok workspace overlay
+# Legacy Converter workspace overlay (tracked in GokuAI)
 
-This tree is synced into `C:\gokuai\projects\RB-Legacy-Java-Converter` so **Fix in Grok** sessions get the same skills, agents, workflows, and standing orders developed for migration repair.
+Durable copy of Fix-in-Grok / migration skills so they are not lost if `projects/` is wiped (that tree is gitignored).
 
 ## Contents
 
-- `.grok/skills/` — `repair-failed-262-output`, `migrate-neoforge-262`, `encode-262r-remap`, `validate-destination-build`, `minecraft-knowledge`
-- `.grok/agents/` — `mc-research`, `mc-fast`, `mc-code`, `mc-reviewer`
-- `.grok/workflows/` — `repair-neoforge-262.rhai`
+- `.grok/skills/` — repair/migrate/encode/validate/minecraft-knowledge
+- `.grok/agents/` — mc-research, mc-fast, mc-code, mc-reviewer
+- `.grok/workflows/` — repair-neoforge-262
 - `.grok/rules/` — knowledge pointers
 - `Agents.md` — slim standing orders
-- `tools/` — `Build-WithDestinationJava.ps1`, `Lint-MigrationSkills.ps1`
+- `tools/` — Build-WithDestinationJava.ps1, Lint-MigrationSkills.ps1
 
-## Sync
+## Sync into a workspace
 
 ```powershell
-.\scripts\Sync-GokuaiConverterWorkspace.ps1
+# Any workspace (skills only)
+.\scripts\Sync-LegacyConverterWorkspace.ps1 -Workspace "D:\my-mod-26.2" -SkillsOnly
+
+# Converter project (full tools when packaging repo present)
+.\scripts\Sync-LegacyConverterWorkspace.ps1 -Workspace "C:\gokuai\projects\RB-Legacy-Java-Converter"
 ```
 
-`Build-Release.ps1` also runs this sync on the build machine after packaging.
+`Open-GokuAIWorkspace.ps1` runs this automatically before every launch (including new workspaces).
+
+Canonical product packaging also keeps a twin under:
+`projects\_upstream\LegacyJavaConverter\gokuai-workspace-overlay\`
+(on LegacyJavaConverter GitHub).

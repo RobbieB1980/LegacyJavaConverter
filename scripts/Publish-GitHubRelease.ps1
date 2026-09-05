@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Create/update a GitHub Release and upload portable + setup artifacts from dist/.
 
@@ -7,9 +7,9 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$Tag = 'v2.10.12',
+    [string]$Tag = 'v2.10.13',
     [string]$Repo = 'RobbieB1980/LegacyJavaConverter',
-    [string]$Name = 'RB Legacy Java Converter 2.10.12'
+    [string]$Name = 'RB Legacy Java Converter 2.10.13'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -59,14 +59,18 @@ function Invoke-GitHubJson([string]$Method, [string]$Uri, [hashtable]$BodyObj = 
 $notes = @"
 ## RB Legacy Java Converter $Tag
 
-Converts **Forge/NeoForge 1.20.1â€“26.1** (and decompiled jars) â†’ **NeoForge 26.2** (default **26.2.0.72**).
+Converts **Forge/NeoForge 1.20.1Ã¢â‚¬â€œ26.1** (and decompiled jars) Ã¢â€ â€™ **NeoForge 26.2** (default **26.2.0.72**).
 
 ### Downloads
 
 | File | Description |
 |------|-------------|
 | ``RB-Legacy-Java-Converter-Setup.exe`` | Windows installer (self-contained; **embeds** portable toolset only) |
-| ``RB-Legacy-Java-Converter-Portable.zip`` | No install â€” extract and run ``Start-Converter.bat`` or the EXE |
+| ``RB-Legacy-Java-Converter-Portable.zip`` | No install Ã¢â‚¬â€ extract and run ``Start-Converter.bat`` or the EXE |
+
+### What's new in 2.10.13
+
+- Catch-up: GokuAI-only knowledge index policy in overlay; SkillsOnly sync for new workspaces; launcher repair preset alignment
 
 ### What's new in 2.10.12
 
@@ -151,3 +155,4 @@ Upload-Asset $portable
 
 Write-Host ""
 Write-Host "Published: https://github.com/$Repo/releases/tag/$Tag" -ForegroundColor Green
+

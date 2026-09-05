@@ -1,4 +1,11 @@
-﻿## 2.10.12 — 2026-09-05
+﻿## 2.10.13 — 2026-09-06
+
+Catch-up release after GokuAI-only indexer + workspace launcher polish:
+
+- Packaging includes latest `gokuai-workspace-overlay` (GokuAI-only knowledge rules, skills/agents).
+- `Sync-GokuaiConverterWorkspace -SkillsOnly` for arbitrary/new workspaces.
+- Aligns installer Fix-in-Grok with live GokuAI `Open-GokuAIWorkspace` repair preset path.
+## 2.10.12 — 2026-09-05
 
 Fix-in-Grok knowledge/MCP hardening:
 
@@ -416,5 +423,6 @@ Proven on **Friend** (runtime) and **The Knocker** (NeoForge 1.21.8 jar Ã¢â�
 
 ## 1.1.x and earlier
 See git history for initial GUI, jar pipeline, and Forge 1.20.1 scaffold support.
+
 
 
