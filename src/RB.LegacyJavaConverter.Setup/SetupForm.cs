@@ -44,7 +44,7 @@ public sealed class SetupForm : Form
 
         var title = new Label
         {
-            Text = AppDisplayName + " v" + (Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "2.10.7"),
+            Text = AppDisplayName + " v" + (Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "2.10.8"),
             Font = new Font("Segoe UI Semibold", 14f),
             ForeColor = Color.White,
             Location = new Point(24, 18),
@@ -372,7 +372,7 @@ public sealed class SetupForm : Form
 
     private static void WriteUninstaller(string dest, string exe)
     {
-        var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "2.10.7";
+        var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "2.10.8";
         var ps1 = Path.Combine(dest, "Uninstall.ps1");
         var cmd = Path.Combine(dest, "Uninstall.cmd");
 
@@ -419,7 +419,7 @@ Start-Process -FilePath cmd.exe -ArgumentList '/c', $cmd -WindowStyle Hidden
 
     private static void RegisterUninstall(string dest, string exe)
     {
-        var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "2.10.7";
+        var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "2.10.8";
         var versionFile = Path.Combine(dest, "version.txt");
         if (File.Exists(versionFile))
             version = File.ReadAllText(versionFile).Trim();

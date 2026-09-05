@@ -1,10 +1,19 @@
+## 2.10.8 — 2026-09-05
+
+Knowledge rewired fully onto **GokuAI** (no `C:\rmblocal_llm` dependency for repair/MCP):
+
+- Minecraft knowledge root: `C:\gokuai\Data`
+- Minecraft knowledge index: `C:\gokuai\DataIndex\minecraft-knowledge\` (does **not** replace `goku-data.db`)
+- MCP: `C:\gokuai\scripts\knowledge_mcp.py` via `C:\gokuai\runtime\.venv`
+- Fix-in-Grok prompt primers/CASE paths now under `C:\gokuai\Data`
+- Removed in-tree duplicate `knowledge.db` copy and alternate primer_changes folder under Data
 ## 2.10.7 — 2026-09-05
 
 Fix-in-Grok failure handoff now launches **GokuAI**:
 
 - GUI + `Open-GrokRepairSession.ps1` call `C:\gokuai\Start-GokuAI.ps1` with workspace `C:\gokuai\projects\RB-Legacy-Java-Converter`.
 - Replaces the old `C:\rmblocal_llm\Start-GrokBuild.ps1` path.
-- Prompt still forces MIGRATION_EVIDENCE / primer_changes / CASE files before inventing fixes; knowledge roots remain under `C:\rmblocal_llm\knowledge`.
+- Prompt still forces MIGRATION_EVIDENCE / primer_changes / CASE files before inventing fixes; knowledge roots remain under `C:\gokuai\Data`.
 ## 2.10.6 — 2026-09-04 / 2026-09-05
 
 CASE-005 in-game bootstrap crash on NeoForge 26.2.0.72:
@@ -162,7 +171,7 @@ Full product refresh for NeoForge **26.2.0.72**.
 - Exact primer rules + Nextgen/Knocker overlays; Fusion official dep-cache.
 ## 1.5.5-mdk â€” 2026-08-29
 
-- Prefer station MDK `C:\rmblocal_llm\knowledge\Neoforge26.2generatortemplate` for Gradle wrapper bootstrap.
+- Prefer station MDK `C:\gokuai\Data\Neoforge26.2generatortemplate` for Gradle wrapper bootstrap.
 - Default `-NeoVersion` bumped to `26.2.0.72` to match that template (ModDev remains `2.0.144`).
 ## 1.5.4-solutions â€” 2026-08-29
 

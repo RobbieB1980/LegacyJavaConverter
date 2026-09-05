@@ -3868,7 +3868,7 @@ function Install-WrapperFromTowwOrMdk {
     param([string]$Root)
     # Prefer the station NeoForge 26.2 generator MDK (canonical), then legacy MDK/completed ports.
     $candidates = @(
-        'C:\rmblocal_llm\knowledge\Neoforge26.2generatortemplate',
+        'C:\gokuai\Data\Neoforge26.2generatortemplate',
         'F:\rob_projects\Minecraft_AI_Workstation\knowledge\neoforge\mdks\MDK-26.2-ModDevGradle',
         'F:\rob_projects\Completed\GrokBuild_MF\Completed_Projects\Java\26.2\Gradle_Workspaces\TheOneWhoWatches-26.2',
         'F:\rob_projects\Completed\GrokBuild_MF\Completed_Projects\Java\26.2\Gradle_Workspaces\Friend-26.2',

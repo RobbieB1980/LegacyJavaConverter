@@ -7,7 +7,7 @@ namespace RB.LegacyJavaConverter;
 public sealed class MainForm : Form
 {
     private static string AppVersion =>
-        Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "2.10.7";
+        Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "2.10.8";
 
     private readonly RadioButton _radProject = new() { Text = "Mode A: Project folder (Forge source with src/)", AutoSize = true, Checked = true };
     private readonly RadioButton _radJar = new() { Text = "Mode B: Finished .jar file (decompile, not decrypt)", AutoSize = true };
@@ -953,8 +953,8 @@ public sealed class MainForm : Form
         var evidence = Path.Combine(failedOutput, "MIGRATION_EVIDENCE.md");
         var profile = Path.Combine(failedOutput, "SOURCE_PROFILE.json");
         var errors = Path.Combine(failedOutput, "compile-errors.log");
-        var solved = @"C:\rmblocal_llm\knowledge\Solved_Problems\legacy-java-converter-26.2";
-        var primers = @"C:\rmblocal_llm\knowledge\NeoForge_Primers\26.2";
+        var solved = @"C:\gokuai\Data\Solved_Problems\legacy-java-converter-26.2";
+        var primers = @"C:\gokuai\Data\NeoForge_Primers\26.2";
 
         return
             "You are repairing a failed RB Legacy Java Converter → NeoForge 26.2 run.\n\n" +

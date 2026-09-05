@@ -11,9 +11,9 @@
     <ApplicationIcon>..\..\assets\app.ico</ApplicationIcon>
     <Product>RB Legacy Java Converter Setup</Product>
     <Company>RobbieB1980</Company>
-    <Version>2.10.7</Version>
-    <FileVersion>2.10.7</FileVersion>
-    <InformationalVersion>2.10.7</InformationalVersion>
+    <Version>2.10.8</Version>
+    <FileVersion>2.10.8</FileVersion>
+    <InformationalVersion>2.10.8</InformationalVersion>
     <Description>Installer for RB Legacy Java Converter (portable toolset)</Description>
   </PropertyGroup>
 

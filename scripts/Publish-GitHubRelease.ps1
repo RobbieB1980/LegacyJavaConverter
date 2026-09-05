@@ -3,13 +3,13 @@
   Create/update a GitHub Release and upload portable + setup artifacts from dist/.
 
 .EXAMPLE
-  .\scripts\Publish-GitHubRelease.ps1 -Tag v2.10.7
+  .\scripts\Publish-GitHubRelease.ps1 -Tag v2.10.8
 #>
 [CmdletBinding()]
 param(
-    [string]$Tag = 'v2.10.7',
+    [string]$Tag = 'v2.10.8',
     [string]$Repo = 'RobbieB1980/LegacyJavaConverter',
-    [string]$Name = 'RB Legacy Java Converter 2.10.7'
+    [string]$Name = 'RB Legacy Java Converter 2.10.8'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -68,10 +68,11 @@ Converts **Forge/NeoForge 1.20.1–26.1** (and decompiled jars) → **NeoForge 2
 | ``RB-Legacy-Java-Converter-Setup.exe`` | Windows installer (self-contained; **embeds** portable toolset only) |
 | ``RB-Legacy-Java-Converter-Portable.zip`` | No install — extract and run ``Start-Converter.bat`` or the EXE |
 
-### What's new in 2.10.7
+### What's new in 2.10.8
 
-- **Fix in Grok** now launches `C:\gokuai\Start-GokuAI.ps1` (GokuAI) against `C:\gokuai\projects\RB-Legacy-Java-Converter`
-- Includes all 2.10.6 CASE-005 in-game remaps + recipe ingredient string pass
+- Knowledge MCP + repair prompts use `C:\gokuai\Data` and `C:\gokuai\DataIndex\minecraft-knowledge` (`goku-data.db` unchanged)
+- Fix-in-Grok continues to launch `C:\gokuai\Start-GokuAI.ps1`
+- Includes 2.10.6/2.10.7 CASE-005 + GokuAI handoff remaps
 
 ### Requirements
 

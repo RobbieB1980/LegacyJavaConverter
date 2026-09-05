@@ -562,7 +562,7 @@ function Get-StationKnowledgeRoot {
     }
     foreach ($candidate in @(
             $env:RBLOCAL_LLM_KNOWLEDGE,
-            'C:\rmblocal_llm\knowledge'
+            'C:\gokuai\Data'
         )) {
         if ($candidate -and (Test-Path -LiteralPath $candidate)) {
             return (Resolve-Path -LiteralPath $candidate).Path
