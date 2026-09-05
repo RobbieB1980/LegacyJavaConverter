@@ -957,21 +957,31 @@ public sealed class MainForm : Form
         var primers = @"C:\gokuai\Data\NeoForge_Primers\26.2";
 
         var buildHelper = @"C:\gokuai\projects\RB-Legacy-Java-Converter\tools\Build-WithDestinationJava.ps1";
+        var packet = Path.Combine(failedOutput, "EVIDENCE_PACKET.md");
         return
             "You are repairing a failed RB Legacy Java Converter -> NeoForge 26.2 run.\n\n" +
             "FAILED OUTPUT FOLDER:\n" + failedOutput + "\n\n" +
+            "SKILLS / AGENTS (use these - do not reinvent process):\n" +
+            "- Prefer /repair-failed-262-output for this task.\n" +
+            "- Fill " + packet + " from .grok/skills/repair-failed-262-output/references/evidence-packet-template.md (cap ~9k chars).\n" +
+            "- Validation: /validate-destination-build or Build-WithDestinationJava.ps1.\n" +
+            "- Reusable fixes: /encode-262r-remap.\n" +
+            "- Optional workflow: /repair-neoforge-262 with args.failed_output.\n" +
+            "- Subagents: mc-research -> mc-fast/mc-code -> mc-reviewer (one at a time; packet required).\n" +
+            "- Standing orders: project Agents.md. Do not install unrelated process plugins for this repair.\n\n" +
             "MANDATORY ORDER - do this BEFORE inventing any fix or writing Java:\n" +
             "1. Read project AGENTS.md and the newest SESSION-CONTINUE-*.md under:\n   " + solved + "\n" +
             "2. Read these files in the failed output (if present):\n" +
             "   - " + evidence + "\n" +
             "   - " + profile + "\n" +
             "   - " + errors + "\n" +
-            "3. From SOURCE_PROFILE / MIGRATION_EVIDENCE, open ONLY the matching primer_changes ledger under:\n   " + primers + "\n" +
-            "   (primer_changes_<source>-to-26.2.md + one shard at a time). Do NOT dump every full primer.\n" +
-            "4. Search solved cases (CASE-003/004/005, LEARNINGS, DFU/OVY/INT/PKG) in:\n   " + solved + "\n" +
-            "5. Confirm APIs against exact NeoForge/Minecraft 26.2 sources, then fix.\n" +
-            "6. Prefer encoding durable remaps into tools/Convert-Forge1201-ToNeoForge262.ps1 / SolvedConversionIndex over one-off patches.\n" +
-            "7. Success = destination-Java gradlew build producing build/libs/*.jar (not compileJava alone).\n\n" +
+            "3. Create/update " + packet + ".\n" +
+            "4. Search 262r first (one shard) under C:\\gokuai\\Data\\262r then solved cases in:\n   " + solved + "\n" +
+            "5. From SOURCE_PROFILE / MIGRATION_EVIDENCE, open ONLY the matching primer_changes ledger under:\n   " + primers + "\n" +
+            "   (one shard at a time). Do NOT dump every full primer.\n" +
+            "6. Confirm APIs against exact NeoForge/Minecraft 26.2 sources, then fix.\n" +
+            "7. Prefer encoding durable remaps into tools/Convert-Forge1201-ToNeoForge262.ps1 / 262r over one-off patches.\n" +
+            "8. Success = destination-Java gradlew build producing build/libs/*.jar (not compileJava alone).\n\n" +
             "DESTINATION JAVA / GRADLE (mandatory - do this on EVERY validation build):\n" +
             "- NeoForge 26.2 destination JDK major is **25**. Never probe with ambient/source JAVA_HOME (often Java 8) first.\n" +
             "- Before the first gradlew in this session, pin destination Java:\n" +
@@ -980,6 +990,6 @@ public sealed class MainForm : Form
             "- Do not treat 'Gradle requires JVM 17+ ... configured to use JVM 8' as a project compile error - wrong JDK; re-run with destination Java.\n" +
             "- Use the project wrapper (gradlew.bat) only.\n\n" +
             "Do not invent a permanent client renderer compile-gate when the primer Entity Render State / submit path is unfinished.\n" +
-            "Start now by reading the evidence files and stating the detected source version + applicable primer ledger.";
+            "Start now by reading the evidence files and stating the detected source version + applicable primer ledger. Prefer /repair-failed-262-output.";
     }
 }

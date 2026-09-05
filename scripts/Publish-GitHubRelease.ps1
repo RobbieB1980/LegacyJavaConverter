@@ -7,9 +7,9 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$Tag = 'v2.10.11',
+    [string]$Tag = 'v2.10.12',
     [string]$Repo = 'RobbieB1980/LegacyJavaConverter',
-    [string]$Name = 'RB Legacy Java Converter 2.10.11'
+    [string]$Name = 'RB Legacy Java Converter 2.10.12'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -68,17 +68,19 @@ Converts **Forge/NeoForge 1.20.1â€“26.1** (and decompiled jars) â†’ **
 | ``RB-Legacy-Java-Converter-Setup.exe`` | Windows installer (self-contained; **embeds** portable toolset only) |
 | ``RB-Legacy-Java-Converter-Portable.zip`` | No install â€” extract and run ``Start-Converter.bat`` or the EXE |
 
-### What's new in 2.10.11
+### What's new in 2.10.12
 
-- Destination JDK pin: installer ``-Compile``, dependency builds, and Fix-in-Grok/agents always use **Java 25** for NeoForge 26.2 (writes ``org.gradle.java.home``; ignores ambient Java 8 ``JAVA_HOME``)
-- New ``tools/Build-WithDestinationJava.ps1`` + ``Write-GrokRepairPrompt`` mandate so agents never probe source/ambient Java first
-- Cat Fighting 26.1.2 -> 26.2: mixin ``(Object) this instanceof`` repair path documented in 262r
+- Fix-in-Grok prompt integrates migration skills/agents: ``/repair-failed-262-output``, evidence packet, ``mc-research``/``mc-code``/``mc-reviewer``, ``/validate-destination-build``, ``/encode-262r-remap``
+- ``gokuai-workspace-overlay`` + ``scripts/Sync-GokuaiConverterWorkspace.ps1`` keep ``C:\gokuai\projects\RB-Legacy-Java-Converter\.grok`` in sync
+- ``scripts/Download-Portable.ps1`` downloads Portable.zip from GitHub Releases
+- Destination JDK 25 pin retained from 2.10.11
 
 ### Requirements
 
 - Windows x64
 - PowerShell 5.1+
 - JDK 25 for compile/build of converted projects (destination Java)
+- Fix-in-Grok: GokuAI at ``C:\gokuai`` with converter workspace skills
 
 ### Notes
 

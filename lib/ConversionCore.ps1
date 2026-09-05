@@ -1311,7 +1311,7 @@ function Get-GrokRepairPromptBody {
     <#
     .SYNOPSIS
       Canonical Fix-in-Grok / agent repair prompt. Forces destination JDK+Gradle
-      for validation — never ambient/source Java first.
+      for validation — never ambient/source Java first. Requires minecraft-knowledge MCP.
     #>
     param(
         [Parameter(Mandatory)][string]$FailedOutput,
@@ -1326,6 +1326,30 @@ You are repairing a failed RB Legacy Java Converter -> NeoForge $TargetMinecraft
 FAILED OUTPUT FOLDER:
 $failed
 
+KNOWLEDGE + MCP (mandatory):
+- Workspace: ``C:\gokuai\projects\RB-Legacy-Java-Converter``
+- Knowledge corpus: ``C:\gokuai\Data``
+- Canonical index: ``C:\gokuai\DataIndex\minecraft-knowledge`` (via ``_ACTIVE_DB.txt``)
+- MCP server: **minecraft-knowledge** (project ``.grok/config.toml``)
+- At session start read ``.grok/rules/knowledge-sources.md`` and ``.grok/rules/session-knowledge-context.md``.
+- Once per session call ``minecraft-knowledge__knowledge_status`` (and ``list_knowledge_sources`` if readiness is uncertain).
+- Prefer MCP tools over walking ``C:\gokuai\Data``:
+  - ``minecraft-knowledge__search_knowledge`` / ``search_solved_projects`` (category ``262r``, version ``26.2`` first)
+  - ``minecraft-knowledge__build_migration_evidence(source_version, "$TargetMinecraft", query)``
+  - ``minecraft-knowledge__resolve_primer_chain(source_version, "$TargetMinecraft")``
+  - ``minecraft-knowledge__grep_physical_source`` / ``read_physical_source`` for exact-target API proof
+  - ``minecraft-knowledge__resolve_mapping`` with explicit namespaces
+- Do **not** treat ``goku-data.db`` as the agent retrieval path; it is legacy/benchmark-only.
+
+SKILLS / AGENTS (use these - do not reinvent process):
+- Prefer slash/auto skill ``/repair-failed-262-output`` for this task.
+- Fill ``$failed\EVIDENCE_PACKET.md`` from ``.grok/skills/repair-failed-262-output/references/evidence-packet-template.md`` (cap ~9k chars).
+- Validation: ``/validate-destination-build`` or ``Build-WithDestinationJava.ps1``.
+- Reusable fixes: ``/encode-262r-remap``.
+- Optional orchestration: workflow ``/repair-neoforge-262`` with args.failed_output.
+- Subagents when delegating: ``mc-research`` -> ``mc-fast``/``mc-code`` -> ``mc-reviewer`` (one at a time; packet required).
+- Standing orders: project ``Agents.md`` (keep thin). Do **not** install unrelated process plugins for this repair.
+
 MANDATORY ORDER - do this BEFORE inventing any fix or writing Java:
 1. Read project AGENTS.md and the newest SESSION-CONTINUE-*.md under:
    C:\gokuai\Data\Solved_Problems\legacy-java-converter-26.2
@@ -1333,26 +1357,30 @@ MANDATORY ORDER - do this BEFORE inventing any fix or writing Java:
    - $failed\MIGRATION_EVIDENCE.md
    - $failed\SOURCE_PROFILE.json
    - $failed\compile-errors.log
-3. From SOURCE_PROFILE / MIGRATION_EVIDENCE, open ONLY the matching primer_changes ledger under:
+3. Create/update ``$failed\EVIDENCE_PACKET.md`` (template above).
+4. Search **262r first** via MCP (category ``262r``, version ``26.2``) / open one shard under:
+   C:\gokuai\Data\262r\shards
+   then converter notes under ``C:\gokuai\Data\262r\converter``.
+5. From SOURCE_PROFILE / MIGRATION_EVIDENCE, open ONLY the matching primer_changes ledger under:
    C:\gokuai\Data\NeoForge_Primers\26.2
-   (primer_changes_<source>-to-26.2.md + one shard at a time). Do NOT dump every full primer.
-4. Search solved cases (CASE-003/004/005, LEARNINGS, DFU/OVY/INT/PKG) in:
+   (primer_changes_<source>-to-26.2.md + one shard at a time). Prefer ``build_migration_evidence``. Do NOT dump every full primer.
+6. Search solved cases (CASE-003/004/005, LEARNINGS, DFU/OVY/INT/PKG) via ``search_solved_projects`` or in:
    C:\gokuai\Data\Solved_Problems\legacy-java-converter-26.2
-5. Confirm APIs against exact NeoForge/Minecraft $TargetMinecraft sources, then fix.
-6. Prefer encoding durable remaps into tools/Convert-Forge1201-ToNeoForge262.ps1 / SolvedConversionIndex over one-off patches.
-7. Success = destination-Java ``gradlew build`` producing build/libs/*.jar (not compileJava alone).
+7. Confirm APIs against exact NeoForge/Minecraft $TargetMinecraft physical sources (MCP grep/read), then fix.
+8. Prefer encoding durable remaps into tools/Convert-Forge1201-ToNeoForge262.ps1 / SolvedConversionIndex / ``262r`` over one-off patches.
+9. Success = destination-Java ``gradlew build`` producing build/libs/*.jar (not compileJava alone).
 
 DESTINATION JAVA / GRADLE (mandatory - do this on EVERY validation build):
 - NeoForge $TargetMinecraft destination JDK major is **$DestinationJavaMajor**. Never probe with ambient/source ``JAVA_HOME`` (often Java 8) first.
 - Before the first ``gradlew`` in this session, pin destination Java:
   ``powershell -NoProfile -File C:\gokuai\projects\RB-Legacy-Java-Converter\tools\Build-WithDestinationJava.ps1 -ProjectRoot "$failed"``
-  or dot-source ``$toolsLib\ConversionCore.ps1`` and call ``Invoke-GradleBuildWithRequiredJava -ProjectRoot "$failed"``.
+  or ``/validate-destination-build``.
 - Ensure ``org.gradle.java.home`` in the failed output ``gradle.properties`` points at JDK $DestinationJavaMajor+.
-- Do **not** treat ``Gradle requires JVM 17+ ... configured to use JVM 8`` as a project compile error - it means you used the wrong JDK. Re-run with destination Java immediately.
-- Use the project wrapper (``gradlew.bat``) only; do not substitute a different Gradle major unless the scaffold already pins it.
+- Do **not** treat ``Gradle requires JVM 17+ ... configured to use JVM 8`` as a project compile error - wrong JDK; re-run with destination Java immediately.
+- Use the project wrapper (``gradlew.bat``) only.
 
 Do not invent a permanent client renderer compile-gate when the primer Entity Render State / submit path is unfinished.
-Start now by reading the evidence files and stating the detected source version + applicable primer ledger.
+Start now by reading the evidence files and stating the detected source version + applicable primer ledger. Prefer skill ``/repair-failed-262-output``.
 "@
 }
 

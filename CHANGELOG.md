@@ -1,4 +1,12 @@
-﻿## 2.10.11 — 2026-09-05
+﻿## 2.10.12 — 2026-09-05
+
+Fix-in-Grok knowledge/MCP hardening:
+
+- Project MCP **minecraft-knowledge** uses `C:\gokuai\runtime\mia-kit\.venv` + `DataIndex\minecraft-knowledge\knowledge.db` (not broken `runtime\.venv` mcp 2.x).
+- `Open-GrokRepairSession.ps1` registers project MCP, refreshes `knowledge-context.json`, preserves tuned `.grok/rules`, and embeds MCP tool order in `GROK_REPAIR_PROMPT.md`.
+- Canonical agent retrieval remains knowledge.v5 + MCP; `goku-data.db` is rebuilt legacy/benchmark FTS only.
+
+## 2.10.11 — 2026-09-05
 
 Destination JDK pin for installer **and agent** builds:
 
@@ -27,8 +35,8 @@ Easy Mob Farm (CASE-006) + dependency/knowledge hardening:
 Knowledge rewired fully onto **GokuAI** (no `C:\rmblocal_llm` dependency for repair/MCP):
 
 - Minecraft knowledge root: `C:\gokuai\Data`
-- Minecraft knowledge index: `C:\gokuai\DataIndex\minecraft-knowledge\` (does **not** replace `goku-data.db`)
-- MCP: `C:\gokuai\scripts\knowledge_mcp.py` via `C:\gokuai\runtime\.venv`
+- Canonical agent index: `C:\gokuai\DataIndex\minecraft-knowledge\` + MCP **minecraft-knowledge**
+- MCP: `C:\gokuai\scripts\knowledge_mcp.py` via `C:\gokuai\runtime\mia-kit\.venv` (see 2.10.12)
 - Fix-in-Grok prompt primers/CASE paths now under `C:\gokuai\Data`
 - Removed in-tree duplicate `knowledge.db` copy and alternate primer_changes folder under Data
 ## 2.10.7 â€” 2026-09-05
