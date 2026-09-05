@@ -693,11 +693,16 @@ function Resolve-AndAcquireDependencies {
             if (-not (Test-Path $libs)) {
                 $gw = Join-Path $depOut 'gradlew.bat'
                 if (Test-Path $gw) {
-                    Write-Host "    Building converted dependency $id (gradlew jar)" -ForegroundColor DarkCyan
-                    Push-Location $depOut
-                    try {
-                        cmd /c "gradlew.bat jar --no-daemon --stacktrace > dependency-build.log 2>&1"
-                    } finally { Pop-Location }
+                    Write-Host "    Building converted dependency $id (destination Java + gradlew jar)" -ForegroundColor DarkCyan
+                    if (Get-Command Invoke-GradleBuildWithRequiredJava -ErrorAction SilentlyContinue) {
+                        $null = Invoke-GradleBuildWithRequiredJava -ProjectRoot $depOut -Tasks 'jar --no-daemon --stacktrace' -LogFileName 'dependency-build.log' -FallbackJavaMajor 25
+                    } else {
+                        # Fallback only if ConversionCore was not dot-sourced by the caller.
+                        Push-Location $depOut
+                        try {
+                            cmd /c "gradlew.bat jar --no-daemon --stacktrace > dependency-build.log 2>&1"
+                        } finally { Pop-Location }
+                    }
                 }
             }
             if (Test-Path $libs) {

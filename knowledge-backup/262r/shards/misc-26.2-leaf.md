@@ -19,3 +19,12 @@
 | `mc-262r-serverplayer-level` | `serverPlayer.serverLevel()` | `serverPlayer.level()` (returns ServerLevel) |
 | `mc-262r-mod-version-placeholder` | `mod_version=${file.jarVersion}` | strip `${...}` placeholders when scaffolding |
 | `mc-262r-advancements-stoplistening` | `getAdvancements().stopListening()` | remove (gone in 26.2) |
+| `mc-262r-modlauncher-fmlloader` | `Launcher.INSTANCE.environment()…Keys.VERSION` / `MOD_DEV` | `!FMLLoader.getCurrent().isProduction()` |
+| `mc-262r-item-props-ctor-dedupe` | no-arg→`Item.Properties` rewrite when Properties ctor already exists | skip rewrite; collapse FQN+short Properties duplicate ctors |
+
+## Converter encoding
+
+- Cubemob / frog / feline variant packages: `Invoke-MinecraftEntitySubpackageRemapPass`
+- CatVariant/FrogVariant constants + FlyingMob + modlauncher: `Invoke-Minecraft262CompileRepairPass`
+- Item Properties ctor dedupe: `Invoke-BlockItemIdPass`
+- GameTest always-exclude: `Invoke-OptionalIntegrationExcludePass`

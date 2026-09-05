@@ -8,6 +8,11 @@ Related sibling passes are listed at the end. GameRules DeferredRegister is invo
 
 | ID | Detect | Target |
 |---|---|---|
+| `mc-262r-minecart-package` | `world.entity.vehicle.AbstractMinecart` (+ Minecart*) | `world.entity.vehicle.minecart.*` |
+| `mc-262r-boat-package` | `world.entity.vehicle.AbstractBoat` / `Boat` / `Raft` | `world.entity.vehicle.boat.*` |
+| `mc-262r-feline-model-split` | `client.model.FelineModel` / `@Mixin(FelineModel)` | 26.1 split: `AbstractFelineModel`; `createBodyMesh`→`AdultFelineModel`; `setupAnim` mixin→`{Adult,Baby}FelineModel` (see `shards/feline-minecart-packages.md`) |
+| `mc-262r-mixin-descriptor-slash` | mixin `Lnet/minecraft/world/entity/animal/Cat;` | rewrite slash form when FQN remaps (entity subpackage pass) |
+| `mc-262r-mixin-this-instanceof` | `@Mixin` + `this instanceof T` | `(Object) this instanceof T` |
 | `mc-262r-fog-package` | `net.minecraft.client.renderer.FogRenderer` | `net.minecraft.client.renderer.fog.FogRenderer` |
 | `mc-262r-interaction-result` | `world.item.context.InteractionResult` / `world.item.InteractionResult` | `net.minecraft.world.InteractionResult` |
 | `mc-262r-interaction-result` | `InteractionResultHolder<ItemStack>` | `InteractionResult` (Item.use returns InteractionResult) |
@@ -126,6 +131,7 @@ Open the matching **shard** instead of inventing. Full tables live under `shards
 
 - CASE-005: `Solved_Problems/legacy-java-converter-26.2/CASE-005-gecko-kings-1.21.1.md`
 - Easy Mob Farm: `C:\Projects\Easy Mod Farm\easy_mob_farm-neoforge-1.21.4-10.3.0-26.2` (compile-green jar `easy_mob_farm-10.3.0+mc26.2-neoforge.jar`)
+- Easy Mob Farm re-run repair: `C:\Projects\Easy Mod Farm\tet\test-26.2` → `build/libs/easy_mob_farm-1.0.0+mc26.2-neoforge.jar` (2026-09-05; encoded gametest-always-exclude + cubemob/frog + FlyingMob + modlauncher + Item.Properties ctor dedupe)
 - MCreator generator-26.1.2 is the nearest official GameRule/registerBlock shape (no `generator-26.2` yet)
 - Primer 1.21.2 Entity Render States for `submit` / `extractRenderState`
 - Exact target APIs: `Exact_Version_Sources/NeoForge/26.2` and `Minecraft_Java_Server_Client/26.2/client.jar` (or MCP `grep_physical_source`)

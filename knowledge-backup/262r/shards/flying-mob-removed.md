@@ -21,3 +21,7 @@ Replace instanceof checks with concrete flyers still present in 26.2:
 - `Bee` + `bee.isFlying()` (Bee no longer implements FlyingAnimal; `isFlying()` remains)
 
 `omnidirectionalAirMover()` is **protected** on Entity — not usable from external helpers.
+
+## Converter encoding
+
+`Invoke-Minecraft262CompileRepairPass` rewrites `instanceof FlyingMob` / `FlyingAnimal` (+ `isFlying()`) to the leaf heuristic above and injects Ghast / HappyGhast / Phantom / Bee imports.

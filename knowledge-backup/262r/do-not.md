@@ -37,3 +37,11 @@ That model is removed in 26.2. Restore a two-layer 1.21.1 template under the **m
 ## Do not claim GitHub/installer 2.10.6 from tools-only remaps
 
 Product GUI `version.txt` can still read 2.10.5 until Setup/Portable rebuild. Tools remap and product version are separate.
+
+## Do not validate with ambient/source Java first
+
+NeoForge 26.2 destination JDK is **25**. Ambient `JAVA_HOME` is often Java 8. Bare `gradlew` under Java 8 yields `Gradle requires JVM 17+ ... configured to use JVM 8` — that is a wrong-JDK mistake, not a mod compile error. Use `Build-WithDestinationJava.ps1` / `Invoke-GradleBuildWithRequiredJava` and `org.gradle.java.home` before the first build.
+
+## Do not construct ItemStack in static initializers or FMLClientSetup on 26.2
+
+`ItemStack` ctor needs bound Holder components. Static `new ItemStack(Items.*, n)` and FMLClientSetup deferred config that materializes stacks crash with `Components not bound yet`. Use string item ids + lazy load. **ID:** `mc-262r-itemstack-components-bound`

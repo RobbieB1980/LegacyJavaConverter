@@ -11,9 +11,9 @@
     <ApplicationIcon>..\..\assets\app.ico</ApplicationIcon>
     <Product>RB Legacy Java Converter</Product>
     <Company>RobbieB1980</Company>
-    <Version>2.10.10</Version>
-    <FileVersion>2.10.10</FileVersion>
-    <InformationalVersion>2.10.10</InformationalVersion>
+    <Version>2.10.11</Version>
+    <FileVersion>2.10.11</FileVersion>
+    <InformationalVersion>2.10.11</InformationalVersion>
     <Description>Convert Forge 1.20.1 / NeoForge 1.21.x Java mod jars and workspaces to NeoForge 26.2 scaffolds</Description>
   </PropertyGroup>
 
@@ -21,7 +21,10 @@
     <None Include="..\..\Convert-Forge1201-ToNeoForge262.ps1" Link="tools\Convert-Forge1201-ToNeoForge262.ps1" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\Convert-JarToProject.ps1" Link="tools\Convert-JarToProject.ps1" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\Convert-OldJarToNeoForge262.ps1" Link="tools\Convert-OldJarToNeoForge262.ps1" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\Open-GrokRepairSession.ps1" Link="tools\Open-GrokRepairSession.ps1" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\Build-WithDestinationJava.ps1" Link="tools\Build-WithDestinationJava.ps1" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\README.md" Link="tools\README.md" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\lib\ConversionCore.ps1" Link="tools\lib\ConversionCore.ps1" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\docs\USAGE.md" Link="tools\docs\USAGE.md" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\docs\JAR-PIPELINE.md" Link="tools\docs\JAR-PIPELINE.md" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\LICENSE" Link="tools\LICENSE" CopyToOutputDirectory="PreserveNewest" />

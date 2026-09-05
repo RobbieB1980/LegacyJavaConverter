@@ -1,11 +1,15 @@
-﻿## 2.10.10 - 2026-09-05
+﻿## 2.10.11 — 2026-09-05
 
-- CASE-006 Easy Mob Farm overlay: `lib/overlays/easy-mob-farm/1.21.4` (BER render-state, FlyingMob helpers, modlauncher→FMLLoader, cubemob/frog, capture-card ctors, bonus config) + gametest `DELETE.txt`
-- `Invoke-OptionalIntegrationExcludePass`: always delete `**/gametest/**/*.java` and write gradle exclude (not gated on soft-dep deletes)
-- Entity-subpackage: Slime/MagmaCube→cubemob, Frog/FrogVariant(s), CatVariant(s)
-- Compile-repair: FlyingMob/FlyingAnimal leaf heuristic, CatVariants/FrogVariants constants, modlauncher→FMLLoader
-- Block/Item id pass: skip/dedupe duplicate `Item.Properties` constructors
-- SolvedConversionIndex: `CASE-006-easy-mob-farm-1.21.4`
+Destination JDK pin for installer **and agent** builds:
+
+- `Invoke-GradleBuildWithRequiredJava` always resolves the **destination** JDK major (Java **25** for NeoForge 26.2) and sets `JAVA_HOME` — ignores ambient Java-8 `JAVA_HOME`/PATH.
+- Writes `org.gradle.java.home` into the output `gradle.properties` at scaffold and again before `-Compile`, so bare `gradlew` / Fix-in-Grok repairs also use destination Java.
+- `Get-ProjectRequiredJavaMajor` also maps `minecraft_version` from `gradle.properties` (26.x → 25).
+- New `tools/Build-WithDestinationJava.ps1` — agents must use this (not ambient `gradlew`) for validation.
+- `Write-GrokRepairPrompt` embeds the destination-Java mandate; `Open-GrokRepairSession` + compile-failure path always refresh it and pin JDK 25.
+- Dependency converted-jar builds also call `Invoke-GradleBuildWithRequiredJava`.
+- Agent rules: `.grok/rules/session-knowledge-context.md`, `Agents.md`, `262r/converter/destination-java.md`, `262r/do-not.md`.
+
 ## 2.10.9 — 2026-09-05
 
 Easy Mob Farm (CASE-006) + dependency/knowledge hardening:
@@ -404,6 +408,5 @@ Proven on **Friend** (runtime) and **The Knocker** (NeoForge 1.21.8 jar Ã¢â�
 
 ## 1.1.x and earlier
 See git history for initial GUI, jar pipeline, and Forge 1.20.1 scaffold support.
-
 
 

@@ -80,7 +80,7 @@ else {
 # Always overwrite tools scripts from repo root (publish output can ship stale copies)
 $toolsFinal = Join-Path $PortableRoot 'tools'
 if (-not (Test-Path $toolsFinal)) { New-Item -ItemType Directory -Path $toolsFinal -Force | Out-Null }
-foreach ($s in @('Convert-JarToProject.ps1','Convert-OldJarToNeoForge262.ps1','Convert-Forge1201-ToNeoForge262.ps1','Open-GrokRepairSession.ps1','README.md','LICENSE','CHANGELOG.md')) {
+foreach ($s in @('Convert-JarToProject.ps1','Convert-OldJarToNeoForge262.ps1','Convert-Forge1201-ToNeoForge262.ps1','Open-GrokRepairSession.ps1','Build-WithDestinationJava.ps1','README.md','LICENSE','CHANGELOG.md')) {
     $src = Join-Path $RepoRoot $s
     if (Test-Path $src) {
         Copy-Item $src $toolsFinal -Force

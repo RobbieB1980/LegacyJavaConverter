@@ -13,11 +13,10 @@ $ErrorActionPreference = 'Stop'
 $start = Join-Path $GokuRoot 'Start-GokuAI.ps1'
 if (-not (Test-Path $start)) { throw "Missing $start — install/update GokuAI first." }
 if (-not (Test-Path $FailedOutput)) { throw "Failed output missing: $FailedOutput" }
-$prompt = Join-Path $FailedOutput 'GROK_REPAIR_PROMPT.md'
-if (-not (Test-Path $prompt)) {
-  @"
-Repair failed converter output: $FailedOutput
-Read MIGRATION_EVIDENCE.md, SOURCE_PROFILE.json, compile-errors.log, then primer_changes + CASE files BEFORE inventing fixes.
-"@ | Set-Content $prompt -Encoding utf8
-}
+
+. (Join-Path $PSScriptRoot 'lib\ConversionCore.ps1')
+# Always refresh the prompt + destination JDK pin so agents never start on ambient Java 8.
+$prompt = Write-GrokRepairPrompt -FailedOutput $FailedOutput -DestinationJavaMajor 25 -TargetMinecraft '26.2'
+Write-Host "Wrote repair prompt + destination Java pin: $prompt" -ForegroundColor Cyan
+
 & $start -ProjectPath $Workspace -Root $GokuRoot -PromptFile $prompt

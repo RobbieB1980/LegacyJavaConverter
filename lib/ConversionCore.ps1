@@ -1100,26 +1100,55 @@ function Get-JarRequiredJavaMajor {
     }
 }
 
+function Get-DestinationJavaMajorForMinecraft {
+    <#
+    .SYNOPSIS
+      Map a Minecraft / NeoForge target version to the destination JDK major the
+      installer must build with. NeoForge 26.2 → Java 25.
+    #>
+    param(
+        [string]$MinecraftVersion = '26.2',
+        [int]$FallbackJavaMajor = 25
+    )
+    if (-not $MinecraftVersion) { return $FallbackJavaMajor }
+    switch -Regex ($MinecraftVersion.Trim()) {
+        '^26(\.|$)' { return 25 }
+        '^1\.21(\.|$)' { return 21 }
+        '^1\.20(\.|$)' { return 17 }
+        default { return $FallbackJavaMajor }
+    }
+}
+
 function Get-ProjectRequiredJavaMajor {
     <#
     .SYNOPSIS
       Read a NeoForge/ModDevGradle project's required Java major from build.gradle
-      (JavaLanguageVersion.of / options.release). Fallback 25 for Minecraft 26.2.
+      (JavaLanguageVersion.of / options.release) and gradle.properties minecraft_version.
+      Fallback 25 for Minecraft 26.2. Installer builds always use this destination major.
     #>
     param(
         [Parameter(Mandatory)][string]$ProjectRoot,
         [int]$FallbackJavaMajor = 25
     )
-    $buildGradle = Join-Path $ProjectRoot 'build.gradle'
-    if (-not (Test-Path -LiteralPath $buildGradle)) { return $FallbackJavaMajor }
-    $text = Get-Content -LiteralPath $buildGradle -Raw -ErrorAction SilentlyContinue
-    if (-not $text) { return $FallbackJavaMajor }
     $found = New-Object System.Collections.Generic.List[int]
-    foreach ($m in [regex]::Matches($text, 'JavaLanguageVersion\.of\(\s*(\d+)\s*\)')) {
-        $found.Add([int]$m.Groups[1].Value) | Out-Null
+    $buildGradle = Join-Path $ProjectRoot 'build.gradle'
+    if (Test-Path -LiteralPath $buildGradle) {
+        $text = Get-Content -LiteralPath $buildGradle -Raw -ErrorAction SilentlyContinue
+        if ($text) {
+            foreach ($m in [regex]::Matches($text, 'JavaLanguageVersion\.of\(\s*(\d+)\s*\)')) {
+                $found.Add([int]$m.Groups[1].Value) | Out-Null
+            }
+            foreach ($m in [regex]::Matches($text, 'options\.release\s*=\s*(\d+)')) {
+                $found.Add([int]$m.Groups[1].Value) | Out-Null
+            }
+        }
     }
-    foreach ($m in [regex]::Matches($text, 'options\.release\s*=\s*(\d+)')) {
-        $found.Add([int]$m.Groups[1].Value) | Out-Null
+    $propsPath = Join-Path $ProjectRoot 'gradle.properties'
+    if (Test-Path -LiteralPath $propsPath) {
+        $propsText = Get-Content -LiteralPath $propsPath -Raw -ErrorAction SilentlyContinue
+        if ($propsText -and $propsText -match '(?m)^\s*minecraft_version\s*=\s*(\S+)') {
+            $found.Add([int](Get-DestinationJavaMajorForMinecraft -MinecraftVersion $Matches[1].Trim() -FallbackJavaMajor $FallbackJavaMajor)) | Out-Null
+        }
     }
     if ($found.Count -eq 0) { return $FallbackJavaMajor }
     return (($found | Measure-Object -Maximum).Maximum)
@@ -1132,7 +1161,7 @@ function Resolve-Java {
         [string]$ForTool = 'tool'
     )
     $candidates = New-Object System.Collections.Generic.List[string]
-    if ($Preferred) { $candidates.Add($Preferred) | Out-Null }
+    # Destination JDK search paths first — never prefer a stale Java-8 JAVA_HOME/PATH hit.
     foreach ($pattern in @(
             "${env:ProgramFiles}\Eclipse Adoptium\jdk-*\bin\java.exe",
             "${env:ProgramFiles}\Microsoft\jdk-*\bin\java.exe",
@@ -1142,6 +1171,7 @@ function Resolve-Java {
         )) {
         Get-Item $pattern -ErrorAction SilentlyContinue | ForEach-Object { $candidates.Add($_.FullName) | Out-Null }
     }
+    if ($Preferred) { $candidates.Insert(0, $Preferred) | Out-Null }
     if ($env:JAVA_HOME) { $candidates.Add((Join-Path $env:JAVA_HOME 'bin\java.exe')) | Out-Null }
     $cmd = Get-Command java -ErrorAction SilentlyContinue
     if ($cmd) { $candidates.Add($cmd.Source) | Out-Null }
@@ -1162,13 +1192,16 @@ function Resolve-Java {
     if ($usable.Count -eq 0) {
         throw ("{0} requires Java {1}+. No matching JDK was found. Install Temurin/Microsoft JDK {1}+ or pass -JavaExe." -f $ForTool, $MinimumMajor)
     }
+    # Preferred only wins when it already meets the destination major.
     if ($Preferred -and (Test-Path -LiteralPath $Preferred)) {
         $prefFull = [IO.Path]::GetFullPath($Preferred)
         $prefHit = $usable | Where-Object { $_.Path -eq $prefFull } | Select-Object -First 1
         if ($prefHit) { return $prefHit }
     }
+    # Always prefer the exact destination major (e.g. 25 for NeoForge 26.2).
     $exact = @($usable | Where-Object { $_.Major -eq $MinimumMajor } | Select-Object -First 1)
     if ($exact.Count -gt 0) { return $exact[0] }
+    # Otherwise closest higher installed JDK — never a lower ambient JAVA_HOME.
     return ($usable | Sort-Object Major | Select-Object -First 1)
 }
 
@@ -1176,6 +1209,58 @@ function Get-JavaHomeFromJavaExe {
     param([Parameter(Mandatory)][string]$JavaExePath)
     $bin = Split-Path -Parent $JavaExePath
     return (Split-Path -Parent $bin)
+}
+
+function Set-ProjectDestinationJavaHome {
+    <#
+    .SYNOPSIS
+      Pin a converted project's Gradle JVM to the destination JDK major by writing
+      org.gradle.java.home into gradle.properties. Installer -Compile and later
+      bare gradlew builds then ignore a Java-8 JAVA_HOME/PATH.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$ProjectRoot,
+        [int]$FallbackJavaMajor = 25,
+        [int]$RequiredMajor = 0,
+        [switch]$ThrowIfMissing
+    )
+    if ($RequiredMajor -le 0) {
+        $RequiredMajor = Get-ProjectRequiredJavaMajor -ProjectRoot $ProjectRoot -FallbackJavaMajor $FallbackJavaMajor
+    }
+    if ($RequiredMajor -lt 17) { $RequiredMajor = 17 }
+
+    try {
+        $choice = Resolve-Java -MinimumMajor $RequiredMajor -ForTool ("destination Java {0}" -f $RequiredMajor)
+    } catch {
+        if ($ThrowIfMissing) { throw }
+        return $null
+    }
+
+    $javaHome = Get-JavaHomeFromJavaExe -JavaExePath $choice.Path
+    $propsPath = Join-Path $ProjectRoot 'gradle.properties'
+    $homeProp = ($javaHome -replace '\\', '/')
+    $line = "org.gradle.java.home=$homeProp"
+    if (Test-Path -LiteralPath $propsPath) {
+        $text = Get-Content -LiteralPath $propsPath -Raw -ErrorAction SilentlyContinue
+        if ($null -eq $text) { $text = '' }
+        if ($text -match '(?m)^\s*org\.gradle\.java\.home\s*=') {
+            $text = [regex]::Replace($text, '(?m)^\s*org\.gradle\.java\.home\s*=.*$', $line)
+        } else {
+            if ($text.Length -gt 0 -and -not $text.EndsWith("`n")) { $text += "`r`n" }
+            $text += "$line`r`n"
+        }
+        [IO.File]::WriteAllText($propsPath, $text)
+    } else {
+        [IO.File]::WriteAllText($propsPath, "# Destination JDK pin (NeoForge toolchain)`r`n$line`r`n")
+    }
+
+    return [pscustomobject]@{
+        RequiredMajor = $RequiredMajor
+        SelectedMajor = $choice.Major
+        JavaHome      = $javaHome
+        JavaExe       = $choice.Path
+        PropsPath     = $propsPath
+    }
 }
 
 function Invoke-GradleBuildWithRequiredJava {
@@ -1186,10 +1271,12 @@ function Invoke-GradleBuildWithRequiredJava {
         [int]$FallbackJavaMajor = 25
     )
     $required = Get-ProjectRequiredJavaMajor -ProjectRoot $ProjectRoot -FallbackJavaMajor $FallbackJavaMajor
-    # Gradle itself needs 17+; project toolchain may be higher (25 for NeoForge 26.2).
+    # Installer always builds with the destination JDK (25 for NeoForge 26.2), not ambient JAVA_HOME.
     if ($required -lt 17) { $required = 17 }
-    $choice = Resolve-Java -MinimumMajor $required -ForTool ("Gradle project (requires Java {0})" -f $required)
-    $javaHome = Get-JavaHomeFromJavaExe -JavaExePath $choice.Path
+    $pin = Set-ProjectDestinationJavaHome -ProjectRoot $ProjectRoot -FallbackJavaMajor $FallbackJavaMajor -RequiredMajor $required -ThrowIfMissing
+    $javaHome = $pin.JavaHome
+    $choiceMajor = $pin.SelectedMajor
+    $javaExe = $pin.JavaExe
     $logPath = Join-Path $ProjectRoot $LogFileName
     $gradlew = Join-Path $ProjectRoot 'gradlew.bat'
     if (-not (Test-Path -LiteralPath $gradlew)) { throw "gradlew.bat missing under $ProjectRoot" }
@@ -1213,9 +1300,75 @@ function Invoke-GradleBuildWithRequiredJava {
     return [pscustomobject]@{
         ExitCode       = $exitCode
         RequiredMajor  = $required
-        SelectedMajor  = $choice.Major
+        SelectedMajor  = $choiceMajor
         JavaHome       = $javaHome
-        JavaExe        = $choice.Path
+        JavaExe        = $javaExe
         LogPath        = $logPath
     }
+}
+
+function Get-GrokRepairPromptBody {
+    <#
+    .SYNOPSIS
+      Canonical Fix-in-Grok / agent repair prompt. Forces destination JDK+Gradle
+      for validation — never ambient/source Java first.
+    #>
+    param(
+        [Parameter(Mandatory)][string]$FailedOutput,
+        [int]$DestinationJavaMajor = 25,
+        [string]$TargetMinecraft = '26.2'
+    )
+    $failed = $FailedOutput.TrimEnd('\', '/')
+    $toolsLib = $PSScriptRoot
+    return @"
+You are repairing a failed RB Legacy Java Converter -> NeoForge $TargetMinecraft run.
+
+FAILED OUTPUT FOLDER:
+$failed
+
+MANDATORY ORDER - do this BEFORE inventing any fix or writing Java:
+1. Read project AGENTS.md and the newest SESSION-CONTINUE-*.md under:
+   C:\gokuai\Data\Solved_Problems\legacy-java-converter-26.2
+2. Read these files in the failed output (if present):
+   - $failed\MIGRATION_EVIDENCE.md
+   - $failed\SOURCE_PROFILE.json
+   - $failed\compile-errors.log
+3. From SOURCE_PROFILE / MIGRATION_EVIDENCE, open ONLY the matching primer_changes ledger under:
+   C:\gokuai\Data\NeoForge_Primers\26.2
+   (primer_changes_<source>-to-26.2.md + one shard at a time). Do NOT dump every full primer.
+4. Search solved cases (CASE-003/004/005, LEARNINGS, DFU/OVY/INT/PKG) in:
+   C:\gokuai\Data\Solved_Problems\legacy-java-converter-26.2
+5. Confirm APIs against exact NeoForge/Minecraft $TargetMinecraft sources, then fix.
+6. Prefer encoding durable remaps into tools/Convert-Forge1201-ToNeoForge262.ps1 / SolvedConversionIndex over one-off patches.
+7. Success = destination-Java ``gradlew build`` producing build/libs/*.jar (not compileJava alone).
+
+DESTINATION JAVA / GRADLE (mandatory - do this on EVERY validation build):
+- NeoForge $TargetMinecraft destination JDK major is **$DestinationJavaMajor**. Never probe with ambient/source ``JAVA_HOME`` (often Java 8) first.
+- Before the first ``gradlew`` in this session, pin destination Java:
+  ``powershell -NoProfile -File C:\gokuai\projects\RB-Legacy-Java-Converter\tools\Build-WithDestinationJava.ps1 -ProjectRoot "$failed"``
+  or dot-source ``$toolsLib\ConversionCore.ps1`` and call ``Invoke-GradleBuildWithRequiredJava -ProjectRoot "$failed"``.
+- Ensure ``org.gradle.java.home`` in the failed output ``gradle.properties`` points at JDK $DestinationJavaMajor+.
+- Do **not** treat ``Gradle requires JVM 17+ ... configured to use JVM 8`` as a project compile error - it means you used the wrong JDK. Re-run with destination Java immediately.
+- Use the project wrapper (``gradlew.bat``) only; do not substitute a different Gradle major unless the scaffold already pins it.
+
+Do not invent a permanent client renderer compile-gate when the primer Entity Render State / submit path is unfinished.
+Start now by reading the evidence files and stating the detected source version + applicable primer ledger.
+"@
+}
+
+function Write-GrokRepairPrompt {
+    param(
+        [Parameter(Mandatory)][string]$FailedOutput,
+        [int]$DestinationJavaMajor = 25,
+        [string]$TargetMinecraft = '26.2'
+    )
+    if (-not (Test-Path -LiteralPath $FailedOutput)) {
+        throw "Failed output missing: $FailedOutput"
+    }
+    $null = Set-ProjectDestinationJavaHome -ProjectRoot $FailedOutput -FallbackJavaMajor $DestinationJavaMajor -RequiredMajor $DestinationJavaMajor
+    $body = Get-GrokRepairPromptBody -FailedOutput $FailedOutput -DestinationJavaMajor $DestinationJavaMajor -TargetMinecraft $TargetMinecraft
+    $path = Join-Path $FailedOutput 'GROK_REPAIR_PROMPT.md'
+    $utf8 = New-Object System.Text.UTF8Encoding $false
+    [IO.File]::WriteAllText($path, $body.TrimEnd() + "`r`n", $utf8)
+    return $path
 }

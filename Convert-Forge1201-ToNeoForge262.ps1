@@ -218,6 +218,9 @@ geckolib_version=$GeckoLibVersion
 smartbrainlib_version=$SmartBrainLibVersion
 "@
     [System.IO.File]::WriteAllText((Join-Path $Root 'gradle.properties'), $props.Trim() + "`r`n")
+    # Pin Gradle JVM to destination JDK (Java 25 for NeoForge 26.2) so installer/agent
+    # builds ignore a stale Java-8 JAVA_HOME. Best-effort at scaffold time.
+    $null = Set-ProjectDestinationJavaHome -ProjectRoot $Root -FallbackJavaMajor 25 -RequiredMajor 25
 
     $settings = @"
 pluginManagement {
@@ -1460,6 +1463,27 @@ function Invoke-MinecraftEntitySubpackageRemapPass {
         'net.minecraft.world.entity.animal.FrogVariants' = 'net.minecraft.world.entity.animal.frog.FrogVariants'
         'net.minecraft.world.entity.animal.CatVariant' = 'net.minecraft.world.entity.animal.feline.CatVariant'
         'net.minecraft.world.entity.animal.CatVariants' = 'net.minecraft.world.entity.animal.feline.CatVariants'
+        # 1.21.11 vehicle subpackages (catfighting / minecart mixins)
+        'net.minecraft.world.entity.vehicle.AbstractMinecart' = 'net.minecraft.world.entity.vehicle.minecart.AbstractMinecart'
+        'net.minecraft.world.entity.vehicle.AbstractMinecartContainer' = 'net.minecraft.world.entity.vehicle.minecart.AbstractMinecartContainer'
+        'net.minecraft.world.entity.vehicle.Minecart' = 'net.minecraft.world.entity.vehicle.minecart.Minecart'
+        'net.minecraft.world.entity.vehicle.MinecartBehavior' = 'net.minecraft.world.entity.vehicle.minecart.MinecartBehavior'
+        'net.minecraft.world.entity.vehicle.MinecartChest' = 'net.minecraft.world.entity.vehicle.minecart.MinecartChest'
+        'net.minecraft.world.entity.vehicle.MinecartCommandBlock' = 'net.minecraft.world.entity.vehicle.minecart.MinecartCommandBlock'
+        'net.minecraft.world.entity.vehicle.MinecartFurnace' = 'net.minecraft.world.entity.vehicle.minecart.MinecartFurnace'
+        'net.minecraft.world.entity.vehicle.MinecartHopper' = 'net.minecraft.world.entity.vehicle.minecart.MinecartHopper'
+        'net.minecraft.world.entity.vehicle.MinecartSpawner' = 'net.minecraft.world.entity.vehicle.minecart.MinecartSpawner'
+        'net.minecraft.world.entity.vehicle.MinecartTNT' = 'net.minecraft.world.entity.vehicle.minecart.MinecartTNT'
+        'net.minecraft.world.entity.vehicle.NewMinecartBehavior' = 'net.minecraft.world.entity.vehicle.minecart.NewMinecartBehavior'
+        'net.minecraft.world.entity.vehicle.OldMinecartBehavior' = 'net.minecraft.world.entity.vehicle.minecart.OldMinecartBehavior'
+        'net.minecraft.world.entity.vehicle.AbstractBoat' = 'net.minecraft.world.entity.vehicle.boat.AbstractBoat'
+        'net.minecraft.world.entity.vehicle.AbstractChestBoat' = 'net.minecraft.world.entity.vehicle.boat.AbstractChestBoat'
+        'net.minecraft.world.entity.vehicle.Boat' = 'net.minecraft.world.entity.vehicle.boat.Boat'
+        'net.minecraft.world.entity.vehicle.ChestBoat' = 'net.minecraft.world.entity.vehicle.boat.ChestBoat'
+        'net.minecraft.world.entity.vehicle.ChestRaft' = 'net.minecraft.world.entity.vehicle.boat.ChestRaft'
+        'net.minecraft.world.entity.vehicle.Raft' = 'net.minecraft.world.entity.vehicle.boat.Raft'
+        # Client feline model: 1.21.11 package move (intermediate). 26.1 split handled below — not 1:1.
+        'net.minecraft.client.model.FelineModel' = 'net.minecraft.client.model.animal.feline.FelineModel'
     }
 
     foreach ($file in @(Get-ChildItem -LiteralPath $javaRoot -Recurse -File -Filter '*.java' -ErrorAction SilentlyContinue)) {
@@ -1480,10 +1504,39 @@ function Invoke-MinecraftEntitySubpackageRemapPass {
             if ($t.Contains($old)) {
                 $t = $t.Replace($old, $new)
             }
+            # Mixin method descriptors use JVM slash form; FQN Replace misses them.
+            $oldSlash = $old.Replace('.', '/')
+            $newSlash = $new.Replace('.', '/')
+            if ($t.Contains($oldSlash)) {
+                $t = $t.Replace($oldSlash, $newSlash)
+            }
+        }
+
+        # 26.1: FelineModel split (not 1:1). createBodyMesh → AdultFelineModel; setupAnim mixins → Adult+Baby.
+        if ($t -match 'client\.model\.animal\.feline\.FelineModel\b' -or $t -match '(?<![\w.])FelineModel\b') {
+            $hasBodyMesh = $t -match 'createBodyMesh'
+            $hasSetupAnimInject = $t -match 'setupAnim\(' -and $t -match '@Mixin'
+            if ($hasBodyMesh -and -not $hasSetupAnimInject) {
+                $t = $t.Replace('net.minecraft.client.model.animal.feline.FelineModel', 'net.minecraft.client.model.animal.feline.AdultFelineModel')
+                $t = $t -replace '@Mixin\(\s*FelineModel\.class\s*\)', '@Mixin(AdultFelineModel.class)'
+                $t = $t -replace 'import\s+net\.minecraft\.client\.model\.animal\.feline\.FelineModel\s*;', 'import net.minecraft.client.model.animal.feline.AdultFelineModel;'
+            }
+            elseif ($hasSetupAnimInject) {
+                $t = $t -replace 'import\s+net\.minecraft\.client\.model\.animal\.feline\.FelineModel\s*;', "import net.minecraft.client.model.animal.feline.AdultFelineModel;${nl}import net.minecraft.client.model.animal.feline.BabyFelineModel;"
+                $t = $t -replace '@Mixin\(\s*FelineModel\.class\s*\)', '@Mixin({AdultFelineModel.class, BabyFelineModel.class})'
+                $t = $t.Replace('net.minecraft.client.model.animal.feline.FelineModel', 'net.minecraft.client.model.animal.feline.AbstractFelineModel')
+            }
+            else {
+                $t = $t.Replace('net.minecraft.client.model.animal.feline.FelineModel', 'net.minecraft.client.model.animal.feline.AbstractFelineModel')
+                $t = $t -replace 'import\s+net\.minecraft\.client\.model\.animal\.feline\.FelineModel\s*;', 'import net.minecraft.client.model.animal.feline.AbstractFelineModel;'
+                $t = $t -replace '@Mixin\(\s*FelineModel\.class\s*\)', '@Mixin(AbstractFelineModel.class)'
+                $t = $t -replace '(?<![\w.])FelineModel\b', 'AbstractFelineModel'
+            }
         }
 
         # horse → equine (package + FQN)
         $t = $t.Replace('net.minecraft.world.entity.animal.horse.', 'net.minecraft.world.entity.animal.equine.')
+        $t = $t.Replace('net/minecraft/world/entity/animal/horse/', 'net/minecraft/world/entity/animal/equine/')
 
         # Util: import + FQN (MUST be case-sensitive; -replace would turn util.Mth into util.Util.Mth)
         $t = $t -creplace 'import\s+net\.minecraft\.Util\s*;', 'import net.minecraft.util.Util;'
@@ -1747,6 +1800,12 @@ function Invoke-Minecraft262CompileRepairPass {
         $t = $t -replace 'import\s+net\.minecraft\.world\.item\.InteractionResult\s*;', 'import net.minecraft.world.InteractionResult;'
         if ($t -match '(?<![\w.])InteractionResult\b' -and $t -notmatch 'import\s+net\.minecraft\.world\.InteractionResult\s*;') {
             $t = [regex]::Replace($t, '(?m)^(package\s+[^;]+;\s*)', "`$1${nl}import net.minecraft.world.InteractionResult;${nl}", 1)
+        }
+
+        # Mixin pattern-matching: `this instanceof T` is illegal when the mixin class is unrelated to T
+        # (catfighting Entity/LivingEntity mixins → Cat). Cast through Object first.
+        if ($t -match '@Mixin' -and $t -match '(?<!\(Object\)\s)(?<![\w.])this\s+instanceof\s+') {
+            $t = [regex]::Replace($t, '(?<!\(Object\)\s)(?<![\w.])this\s+instanceof\s+', '(Object) this instanceof ')
         }
 
         # CASE-006: FlyingMob / FlyingAnimal removed (primers 1.21.6 / 26.2). Leaf heuristic:
@@ -4361,6 +4420,14 @@ $report = @"
 
 ## Next commands
 
+Gradle is pinned to the **destination JDK** (Java 25 for NeoForge 26.2) via ``org.gradle.java.home`` in ``gradle.properties``. Do not rely on a Java-8 ``JAVA_HOME``. Prefer the helper (agents must):
+
+``````powershell
+powershell -NoProfile -File "C:\gokuai\projects\RB-Legacy-Java-Converter\tools\Build-WithDestinationJava.ps1" -ProjectRoot "$OutputPath"
+``````
+
+Or, after the pin is present:
+
 ``````powershell
 cd "$OutputPath"
 .\gradlew.bat compileJava --stacktrace
@@ -4387,6 +4454,12 @@ if ($Compile) {
         if ($compileExit -ne 0) {
             Write-Warn2 "Gradle build failed (exit $compileExit). Scaffold is still written."
             Write-Warn2 "See compile-errors.log in the output folder for details."
+            try {
+                $repairPrompt = Write-GrokRepairPrompt -FailedOutput $OutputPath -DestinationJavaMajor 25 -TargetMinecraft $MinecraftVersion
+                Write-Ok "Wrote Fix-in-Grok prompt (destination Java pin): $repairPrompt"
+            } catch {
+                Write-Warn2 "Could not write GROK_REPAIR_PROMPT.md: $($_.Exception.Message)"
+            }
             if (Test-Path -LiteralPath $gradleRun.LogPath) {
                 Get-Content -LiteralPath $gradleRun.LogPath -Tail 40 | ForEach-Object { Write-Host "    $_" }
             }

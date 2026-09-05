@@ -101,3 +101,26 @@ builder = builder.add(Attributes.TEMPT_RANGE, 10.0);
 before `return builder`. CASE-005: 12 chestburster variants (Chestburster, Burster, Predalien, Runner, Royal, Spitter + Hellish/Red counterparts). If another mob ticks a similar goal without the attribute, the next crash names it — apply the same inject.
 
 **Pass:** 262-repair. **ID:** `mc-262r-tempt-range`
+
+## 6. Client setup — ItemStack before components bound
+
+**Crash:** `crash-2026-09-05_12.11.12-client.txt` (Easy Mob Farm CASE-006)  
+**Log:** `NullPointerException: Components not bound yet` → `ItemStack.<init>` → `MobFarmBonusConfig.<clinit>`  
+**Trigger:** `FMLClientSetupEvent.enqueueWork` → deferred config → static `new ItemStack(Items.*, n)`
+
+**Fix:** string defaults in static maps; no ItemStack on FMLClientSetup; lazy `ensureRegistered()` on first use / ServerStarting.
+
+**Shard:** [shards/itemstack-components-bound.md](shards/itemstack-components-bound.md)  
+**ID:** `mc-262r-itemstack-components-bound`
+
+## 7. Mob farm GUI — entity ID before assignment
+
+**Crash:** `crash-2026-09-05_13.13.54-client.txt` (Easy Mob Farm CASE-006)  
+**Cause:** `IllegalStateException: Tried to access entity ID before ID assignment`  
+**Path:** `MobFarmScreen` → `ScreenHelper.renderEntity` → `InventoryScreen.extractEntityInInventoryFollowsMouse` → `ItemModelResolver.updateForLiving` → `Entity.getId()`
+
+GUI preview entities created with `EntityType.create` are never added to the level, so id stays `INVALID_ENTITY_ID` (0). In 26.2 `getId()` throws.
+
+**Fix:** after create, `entity.setId(uniqueNonZero)` (negative counter is fine). Optionally catch in screen helper so preview failures cannot crash the client.
+
+**ID:** `mc-262r-gui-preview-entity-id`

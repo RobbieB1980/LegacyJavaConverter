@@ -7,9 +7,9 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$Tag = 'v2.10.10',
+    [string]$Tag = 'v2.10.11',
     [string]$Repo = 'RobbieB1980/LegacyJavaConverter',
-    [string]$Name = 'RB Legacy Java Converter 2.10.10'
+    [string]$Name = 'RB Legacy Java Converter 2.10.11'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -68,23 +68,23 @@ Converts **Forge/NeoForge 1.20.1â€“26.1** (and decompiled jars) â†’ **
 | ``RB-Legacy-Java-Converter-Setup.exe`` | Windows installer (self-contained; **embeds** portable toolset only) |
 | ``RB-Legacy-Java-Converter-Portable.zip`` | No install â€” extract and run ``Start-Converter.bat`` or the EXE |
 
-### What's new in 2.10.10
+### What's new in 2.10.11
 
-- CASE-006 Easy Mob Farm SolvedConversion overlay (BER render-state + helpers) and gametest DELETE
-- Soft-dep pass always deletes gametest Java sources + gradle exclude
-- FlyingMob/FlyingAnimal, cubemob/frog/CatVariants, modlauncher→FMLLoader, Item.Properties ctor dedupe encoded in converter passes
+- Destination JDK pin: installer ``-Compile``, dependency builds, and Fix-in-Grok/agents always use **Java 25** for NeoForge 26.2 (writes ``org.gradle.java.home``; ignores ambient Java 8 ``JAVA_HOME``)
+- New ``tools/Build-WithDestinationJava.ps1`` + ``Write-GrokRepairPrompt`` mandate so agents never probe source/ambient Java first
+- Cat Fighting 26.1.2 -> 26.2: mixin ``(Object) this instanceof`` repair path documented in 262r
 
 ### Requirements
 
 - Windows x64
 - PowerShell 5.1+
-- JDK 25 for compile/build of converted projects
+- JDK 25 for compile/build of converted projects (destination Java)
 
 ### Notes
 
 - Original input is never modified (always writes to output folder).
 - Setup installs under ``%LOCALAPPDATA%\RB-Legacy-Java-Converter`` by default (no admin required).
-- Detect source version â†’ primer path â†’ solved overlays/passes â†’ ``gradlew build`` for installable jars.
+- Detect source version -> primer path -> solved overlays/passes -> destination-Java ``gradlew build`` for installable jars.
 - Prefer official 26.2 mod jars when published; converter path is for when they are absent.
 "@
 
