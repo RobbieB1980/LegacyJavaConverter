@@ -148,6 +148,14 @@ function Get-ModMetaFromSource {
         if ($tt -match '(?m)^\s*license\s*=\s*"([^"]+)"') { $meta.mod_license = $Matches[1] }
         break
     }
+    # Strip Gradle property placeholders like ${file.jarVersion} so archives get a real version.
+    if ([string]$meta.mod_version -match '\$\{') {
+        $cleaned = ([string]$meta.mod_version) -replace '\$\{[^}]+\}', '' -replace '[^A-Za-z0-9._+-]', ''
+        if (-not $cleaned -or $cleaned -eq '+mc' -or $cleaned.Length -lt 1) { $cleaned = '1.0.0' }
+        $meta.mod_version = $cleaned.Trim('+','-','.')
+        if (-not $meta.mod_version) { $meta.mod_version = '1.0.0' }
+    }
+
     $bg = Join-Path $Root 'build.gradle'
     if (Test-Path $bg) {
         $t = Get-Content $bg -Raw
@@ -1180,9 +1188,19 @@ function Invoke-NeoForge26ApiRewritePass {
         $t = $t -replace '\.getSkin\(\)\.texture\(\)', '.getSkin().body().texturePath()'
 
         # --- Legacy NeoForge item capability API (transfer rewrite is manual) ---
+        # Comment out whole registerBlockEntity(ItemHandler.BLOCK, ...) calls, including Vineflower
+        # multiline forms. A single-line-only replace left orphan ");" and broke compile (Easy Mob Farm).
         $t = $t -replace 'import\s+net\.neoforged\.neoforge\.capabilities\.Capabilities\.ItemHandler\s*;\s*', ''
-        $t = $t -replace '(?m)^(\s*)event\.registerBlockEntity\(\s*ItemHandler\.BLOCK\s*,.+$',
-            '$1// TODO 26.2: item handler capability moved to Capabilities.Item + transfer API (registerBlockEntity removed by converter)'
+        $t = [regex]::Replace($t,
+            '(?ms)^(\s*)event\.registerBlockEntity\s*\(\s*ItemHandler\.BLOCK\s*,.*?\);',
+            '$1// TODO 26.2: item handler capability moved to Capabilities.Item + transfer API (registerBlockEntity removed by converter)')
+        $t = [regex]::Replace($t,
+            '(?ms)^(\s*)event\.registerBlockEntity\s*\(\s*/\*\s*ItemHandler\.BLOCK removed\s*\*/\s*null\s*,.*?\);',
+            '$1// TODO 26.2: item handler capability moved to Capabilities.Item + transfer API (registerBlockEntity removed by converter)')
+        # Orphan closers left when only the ItemHandler.BLOCK token line was stubbed.
+        $t = [regex]::Replace($t,
+            '(?m)^(\s*)// TODO 26\.2: item handler capability moved to Capabilities\.Item \+ transfer API \(registerBlockEntity removed by converter\)\s*\r?\n(?:\s*// TODO 26\.2: item handler capability moved to Capabilities\.Item \+ transfer API \(registerBlockEntity removed by converter\)\s*\r?\n)*\s*\);\s*$',
+            '$1// TODO 26.2: item handler capability moved to Capabilities.Item + transfer API (registerBlockEntity removed by converter)')
 
         # --- Effects / entity packages ---
         $t = $t -replace 'MobEffects\.MOVEMENT_SPEED', 'MobEffects.SPEED'
@@ -2213,11 +2231,22 @@ function Invoke-OptionalIntegrationExcludePass {
     .SYNOPSIS
       Exclude optional third-party integration sources that are not on the compile classpath
       (Carry On, Sable ragdoll, etc.) so leaf mods can still build.
+      When the dependency pipeline already downloaded a matching 26.2 jar into libs/, keep the
+      integration sources (do not exclude) so the leaf compiles against that artifact.
     #>
     param([string]$Root)
 
     $javaRoot = Join-Path $Root 'src\main\java'
     if (-not (Test-Path $javaRoot)) { return 0 }
+
+    $libsDir = Join-Path $Root 'libs'
+    $hasLib = {
+        param([string]$Needle)
+        if (-not (Test-Path -LiteralPath $libsDir)) { return $false }
+        return [bool](Get-ChildItem -LiteralPath $libsDir -Filter '*.jar' -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -match $Needle } |
+            Select-Object -First 1)
+    }
 
     $softRoots = @(
         'tschipp.carryon',
@@ -2225,13 +2254,34 @@ function Invoke-OptionalIntegrationExcludePass {
         'mezz.jei',
         'squeek.appleskin'
     )
+    # Skip exclude when dual-version / target jar was acquired into libs/.
+    if (& $hasLib 'jei') { $softRoots = @($softRoots | Where-Object { $_ -ne 'mezz.jei' }) }
+    if (& $hasLib 'carryon') { $softRoots = @($softRoots | Where-Object { $_ -ne 'tschipp.carryon' }) }
+    if (& $hasLib 'appleskin') { $softRoots = @($softRoots | Where-Object { $_ -ne 'squeek.appleskin' }) }
+    if (& $hasLib 'sable') { $softRoots = @($softRoots | Where-Object { $_ -ne 'dev.leo.sableplayerragdoll' }) }
+
     # Folder-name soft deps (even when the leaf Integration class uses ModList checks / no hard imports).
     $softPathMarkers = @(
         '[\\/]integration[\\/]carryon[\\/]',
         '[\\/]integration[\\/]sable[\\/]',
         '[\\/]integration[\\/]jei[\\/]',
-        '[\\/]integration[\\/]appleskin[\\/]'
+        '[\\/]integration[\\/]appleskin[\\/]',
+        # Easy Mob Farm and similar leaf mods put JEI under compat/jei (not integration/jei).
+        '[\\/]compat[\\/]jei[\\/]',
+        '[\\/]gametest[\\/]'
     )
+    if (& $hasLib 'jei') {
+        $softPathMarkers = @($softPathMarkers | Where-Object { $_ -notmatch 'jei' })
+    }
+    if (& $hasLib 'carryon') {
+        $softPathMarkers = @($softPathMarkers | Where-Object { $_ -notmatch 'carryon' })
+    }
+    if (& $hasLib 'appleskin') {
+        $softPathMarkers = @($softPathMarkers | Where-Object { $_ -notmatch 'appleskin' })
+    }
+    if (& $hasLib 'sable') {
+        $softPathMarkers = @($softPathMarkers | Where-Object { $_ -notmatch 'sable' })
+    }
     $touched = 0
     $integrationDirs = Get-ChildItem $javaRoot -Recurse -Directory -ErrorAction SilentlyContinue |
         Where-Object { $_.Name -eq 'integration' -or $_.FullName -match '[\\/]integration[\\/]' }
@@ -2275,7 +2325,7 @@ sourceSets.main.java {
 "@
                 if ($g -match "(?m)^sourceSets\.main\.java\s*\{") {
                     # already has java excludes (datagen); append more excludes inside if possible
-                    $g = $g -replace "(sourceSets\.main\.java\s*\{)", "`$1`r`n    exclude '**/integration/carryon/**'`r`n    exclude '**/integration/sable/**'"
+                    $g = $g -replace "(sourceSets\.main\.java\s*\{)", "`$1`r`n    exclude '**/integration/carryon/**'`r`n    exclude '**/integration/sable/**'`r`n    exclude '**/compat/jei/**'`r`n    exclude '**/gametest/**'"
                 }
                 else {
                     $g += $excludeBlock
@@ -4020,6 +4070,7 @@ $visitedList = @($meta.mod_id)
 if ($VisitedModIds) { $visitedList += ($VisitedModIds -split ',' | Where-Object { $_ }) }
 
 $convertJarScript = Join-Path $ToolRoot 'Convert-OldJarToNeoForge262.ps1'
+$sourceLibsDir = Join-Path $OutputPath 'libs-source'
 $resolvedDeps = Resolve-AndAcquireDependencies `
     -Records $depRecords `
     -Catalog $catalog `
@@ -4029,6 +4080,8 @@ $resolvedDeps = Resolve-AndAcquireDependencies `
     -LocalJarDirs @($localDirs) `
     -ConvertJarScript $convertJarScript `
     -MinecraftVersion $MinecraftVersion `
+    -SourceMinecraftVersion $sourceProfile.SourceVersion `
+    -SourceLibsDir $sourceLibsDir `
     -NeoVersion $NeoVersion `
     -GeckoLibVersion $GeckoLibVersion `
     -DependencyDepth $DependencyDepth `

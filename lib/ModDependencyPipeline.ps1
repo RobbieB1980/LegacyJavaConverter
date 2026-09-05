@@ -147,8 +147,10 @@ function Read-ImportDetectedLibraries {
         $hit = $false
         foreach ($pat in @($lib.imports)) {
             if (-not $pat) { continue }
+            # Use SimpleMatch with the raw import prefix. Do NOT regex-Escape when
+            # -SimpleMatch is set — Escape turns "mezz.jei" into a literal "mezz\.jei" miss.
             $found = Get-ChildItem -LiteralPath $javaRoot -Recurse -Filter '*.java' -File -ErrorAction SilentlyContinue |
-                Select-String -Pattern ([regex]::Escape($pat)) -SimpleMatch -List |
+                Select-String -Pattern $pat -SimpleMatch -List |
                 Select-Object -First 1
             if ($found) { $hit = $true; break }
         }
@@ -409,6 +411,7 @@ function New-ResolvedDependency {
         [string[]]$Repositories = @(),
         [string]$TomlRange = '',
         [string]$JarPath = '',
+        [string]$SourceJarPath = '',
         [string]$ConvertedProject = '',
         [string]$ModrinthSlug = ''
     )
@@ -423,8 +426,55 @@ function New-ResolvedDependency {
         Repositories      = @($Repositories)
         TomlVersionRange  = $(if ($TomlRange) { $TomlRange } else { $Record.VersionRange })
         JarPath           = $JarPath
+        SourceJarPath     = $SourceJarPath
         ConvertedProject  = $ConvertedProject
         ModrinthSlug      = $ModrinthSlug
+    }
+}
+
+function Save-ModrinthVersionToDirs {
+    <#
+    .SYNOPSIS
+      Download one Modrinth game-version jar into cache and optionally copy into a libs folder.
+    #>
+    param(
+        [string]$ProjectIdOrSlug,
+        [string]$GameVersion,
+        [string[]]$Loaders,
+        [string]$CacheDir,
+        [string]$CopyDir = '',
+        [switch]$SkipDownload
+    )
+    if (-not $ProjectIdOrSlug -or -not $GameVersion) { return $null }
+    $file = Find-ModrinthVersionFile -ProjectIdOrSlug $ProjectIdOrSlug -GameVersion $GameVersion -Loaders $Loaders
+    if (-not $file) { return $null }
+    $versionCache = Join-Path $CacheDir $GameVersion
+    if (-not (Test-Path -LiteralPath $versionCache)) {
+        New-Item -ItemType Directory -Path $versionCache -Force | Out-Null
+    }
+    $dest = Join-Path $versionCache $file.FileName
+    $ok = $true
+    if (-not $SkipDownload) {
+        if (-not ((Test-Path -LiteralPath $dest) -and ((Get-Item -LiteralPath $dest).Length -gt 1000))) {
+            $ok = Save-HttpFile -Url $file.Url -Dest $dest
+        }
+    }
+    if (-not $ok -or -not (Test-Path -LiteralPath $dest)) { return $null }
+    $libCopy = ''
+    if ($CopyDir) {
+        if (-not (Test-Path -LiteralPath $CopyDir)) {
+            New-Item -ItemType Directory -Path $CopyDir -Force | Out-Null
+        }
+        $libCopy = Join-Path $CopyDir $file.FileName
+        Copy-Item -LiteralPath $dest -Destination $libCopy -Force
+    }
+    return [pscustomobject]@{
+        CachePath = $dest
+        JarPath   = $(if ($libCopy) { $libCopy } else { $dest })
+        Version   = [string]$file.Version
+        Loader    = [string]$file.Loader
+        FileName  = [string]$file.FileName
+        GameVersion = $GameVersion
     }
 }
 
@@ -438,6 +488,8 @@ function Resolve-AndAcquireDependencies {
         [string[]]$LocalJarDirs,
         [string]$ConvertJarScript,
         [string]$MinecraftVersion = '26.2',
+        [string]$SourceMinecraftVersion = '',
+        [string]$SourceLibsDir = '',
         [string]$NeoVersion = '26.2.0.66',
         [string]$GeckoLibVersion = '5.5.3',
         [int]$DependencyDepth = 0,
@@ -452,6 +504,11 @@ function Resolve-AndAcquireDependencies {
     $resolved = New-Object System.Collections.Generic.List[object]
     $visited = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
     foreach ($v in @($VisitedModIds)) { if ($v) { [void]$visited.Add($v) } }
+    if (-not $SourceMinecraftVersion) { $SourceMinecraftVersion = '1.20.1' }
+    if (-not $SourceLibsDir -and $LibsDir) {
+        $parent = Split-Path -Parent $LibsDir
+        if ($parent) { $SourceLibsDir = Join-Path $parent 'libs-source' }
+    }
 
     foreach ($rec in $Records) {
         $id = $rec.ModId
@@ -483,7 +540,7 @@ function Resolve-AndAcquireDependencies {
             if ($entry.tomlVersionRange) { $tomlRange = $entry.tomlVersionRange }
         }
 
-        # --- official maven ---
+        # --- official maven (target 26.2 compile classpath) ---
         if ($mavenCoord -and -not $SkipDownload) {
             $jar = Save-MavenArtifact -Coordinate $mavenCoord -Repositories $repos -DestDir $CacheDir
             if ($jar) {
@@ -519,61 +576,87 @@ function Resolve-AndAcquireDependencies {
             }
         }
 
-        # --- Modrinth official 26.2 NeoForge (then Forge 26.2) ---
+        # --- Dual Modrinth pull: detected source version + destination 26.2 ---
+        # Always attempt both official jars when a Modrinth project exists (including optional /
+        # import-detected soft deps like JEI). Source jar is evidence for API deltas; target
+        # jar is wired onto the 26.2 compile classpath under libs/.
         $proj = $null
         if (-not $SkipDownload) {
             $proj = Find-ModrinthProject -ModId $id -PreferredSlug $modrinthSlug
         }
+        $sourceJarInfo = $null
+        $targetJarInfo = $null
         if ($proj) {
             $slug = $(if ($proj.slug) { [string]$proj.slug } else { $modrinthSlug })
-            $file = Find-ModrinthVersionFile -ProjectIdOrSlug $slug -GameVersion $MinecraftVersion -Loaders @('neoforge', 'forge')
-            if ($file) {
-                $dest = Join-Path $CacheDir $file.FileName
-                $ok = $true
-                if (-not $SkipDownload) { $ok = Save-HttpFile -Url $file.Url -Dest $dest }
-                if ($ok -and (Test-Path -LiteralPath $dest)) {
-                    if (-not (Test-Path $LibsDir)) { New-Item -ItemType Directory -Path $LibsDir -Force | Out-Null }
-                    $libCopy = Join-Path $LibsDir $file.FileName
-                    Copy-Item -LiteralPath $dest -Destination $libCopy -Force
-                    [void]$visited.Add($id)
-                    $resolved.Add((New-ResolvedDependency -Record $rec -Action 'modrinth' -Status 'downloaded' -Note "Official $MinecraftVersion $($file.Loader) jar from Modrinth $($file.Version)" -TomlRange $tomlRange -JarPath $libCopy -ModrinthSlug $slug)) | Out-Null
-                    continue
+            if ($SourceMinecraftVersion -and $SourceMinecraftVersion -ne $MinecraftVersion) {
+                $sourceJarInfo = Save-ModrinthVersionToDirs `
+                    -ProjectIdOrSlug $slug `
+                    -GameVersion $SourceMinecraftVersion `
+                    -Loaders @('neoforge', 'forge') `
+                    -CacheDir $CacheDir `
+                    -CopyDir $SourceLibsDir `
+                    -SkipDownload:$SkipDownload
+            }
+            $targetJarInfo = Save-ModrinthVersionToDirs `
+                -ProjectIdOrSlug $slug `
+                -GameVersion $MinecraftVersion `
+                -Loaders @('neoforge', 'forge') `
+                -CacheDir $CacheDir `
+                -CopyDir $LibsDir `
+                -SkipDownload:$SkipDownload
+            if ($targetJarInfo) {
+                [void]$visited.Add($id)
+                $noteParts = @(
+                    "Official target $MinecraftVersion $($targetJarInfo.Loader) jar from Modrinth $($targetJarInfo.Version)"
+                )
+                if ($sourceJarInfo) {
+                    $noteParts += "source $SourceMinecraftVersion $($sourceJarInfo.Loader) jar $($sourceJarInfo.Version) saved for API comparison"
+                } elseif ($SourceMinecraftVersion -and $SourceMinecraftVersion -ne $MinecraftVersion) {
+                    $noteParts += "source $SourceMinecraftVersion jar not found on Modrinth"
                 }
+                $resolved.Add((New-ResolvedDependency -Record $rec -Action 'modrinth-dual' -Status 'downloaded' -Note ($noteParts -join '; ') -TomlRange $tomlRange -JarPath $targetJarInfo.JarPath -SourceJarPath $(if ($sourceJarInfo) { $sourceJarInfo.JarPath } else { '' }) -ModrinthSlug $slug)) | Out-Null
+                continue
+            }
+            if ($sourceJarInfo -and -not $targetJarInfo) {
+                # Keep source evidence even when destination official jar is missing.
+                $resolved.Add((New-ResolvedDependency -Record $rec -Action 'modrinth-source-only' -Status 'source-downloaded' -Note "Downloaded source $SourceMinecraftVersion jar $($sourceJarInfo.Version); no official $MinecraftVersion jar yet" -TomlRange $tomlRange -SourceJarPath $sourceJarInfo.JarPath -ModrinthSlug $slug)) | Out-Null
             }
         }
 
         if ($actionHint -eq 'never-convert' -or $actionHint -eq 'official') {
             $why = if ($entry -and $entry.Reason) { $entry.Reason } else { 'No official NeoForge 26.2 artifact found; auto-convert is disabled for this library.' }
-            $resolved.Add((New-ResolvedDependency -Record $rec -Action 'gap' -Status 'missing-official' -Note $why -ModrinthSlug $modrinthSlug -TomlRange $tomlRange)) | Out-Null
+            $resolved.Add((New-ResolvedDependency -Record $rec -Action 'gap' -Status 'missing-official' -Note $why -ModrinthSlug $modrinthSlug -TomlRange $tomlRange -SourceJarPath $(if ($sourceJarInfo) { $sourceJarInfo.JarPath } else { '' }))) | Out-Null
             continue
         }
 
+        # Optional deps: official dual download already attempted above. Skip recursive convert
+        # unless -ConvertOptionalDependencies (or the dep was import-detected as required).
         if (-not $rec.Required -and -not $ConvertOptional) {
-            $resolved.Add((New-ResolvedDependency -Record $rec -Action 'optional-gap' -Status 'skipped-optional' -Note 'Optional dependency; pass -ConvertOptionalDependencies to convert/download' -ModrinthSlug $modrinthSlug)) | Out-Null
+            $resolved.Add((New-ResolvedDependency -Record $rec -Action 'optional-gap' -Status 'skipped-optional' -Note "Optional dependency: official jars pulled when available; pass -ConvertOptionalDependencies to convert when no $MinecraftVersion artifact exists" -ModrinthSlug $modrinthSlug -SourceJarPath $(if ($sourceJarInfo) { $sourceJarInfo.JarPath } else { '' }))) | Out-Null
             continue
         }
 
         if ($SkipConvert -or $DependencyDepth -ge $MaxDependencyDepth) {
-            $resolved.Add((New-ResolvedDependency -Record $rec -Action 'gap' -Status 'needs-convert' -Note "No 26.2 artifact. Conversion skipped (depth $DependencyDepth / max $MaxDependencyDepth or -SkipDependencyConvert)." -ModrinthSlug $modrinthSlug)) | Out-Null
+            $resolved.Add((New-ResolvedDependency -Record $rec -Action 'gap' -Status 'needs-convert' -Note "No $MinecraftVersion artifact. Conversion skipped (depth $DependencyDepth / max $MaxDependencyDepth or -SkipDependencyConvert)." -ModrinthSlug $modrinthSlug -SourceJarPath $(if ($sourceJarInfo) { $sourceJarInfo.JarPath } else { '' }))) | Out-Null
             continue
         }
 
-        # --- convert 1.20.1 jar ---
+        # --- convert from detected source-version jar (not hardcoded 1.20.1) ---
         $srcJar = Find-LocalDependencyJar -ModId $id -SearchDirs $LocalJarDirs
+        if (-not $srcJar -and $sourceJarInfo -and $sourceJarInfo.CachePath) {
+            $srcJar = $sourceJarInfo.CachePath
+        }
         if (-not $srcJar -and -not $SkipDownload) {
             if (-not $proj) { $proj = Find-ModrinthProject -ModId $id -PreferredSlug $modrinthSlug }
             if ($proj) {
                 $slug = $(if ($proj.slug) { [string]$proj.slug } else { $modrinthSlug })
-                $old = Find-ModrinthVersionFile -ProjectIdOrSlug $slug -GameVersion '1.20.1' -Loaders @('forge', 'neoforge')
-                if ($old) {
-                    $dest = Join-Path $CacheDir $old.FileName
-                    if (Save-HttpFile -Url $old.Url -Dest $dest) { $srcJar = $dest }
-                }
+                $old = Save-ModrinthVersionToDirs -ProjectIdOrSlug $slug -GameVersion $SourceMinecraftVersion -Loaders @('forge', 'neoforge') -CacheDir $CacheDir -CopyDir $SourceLibsDir
+                if ($old) { $srcJar = $old.CachePath }
             }
         }
 
         if (-not $srcJar) {
-            $resolved.Add((New-ResolvedDependency -Record $rec -Action 'gap' -Status 'needs-jar' -Note 'No 26.2 artifact and no 1.20.1 jar found locally or on Modrinth. Place the Forge 1.20.1 jar in -DependencyJarDir.' -ModrinthSlug $modrinthSlug)) | Out-Null
+            $resolved.Add((New-ResolvedDependency -Record $rec -Action 'gap' -Status 'needs-jar' -Note "No $MinecraftVersion artifact and no $SourceMinecraftVersion jar found locally or on Modrinth. Place the source-version jar in -DependencyJarDir." -ModrinthSlug $modrinthSlug)) | Out-Null
             continue
         }
 
@@ -629,9 +712,9 @@ function Resolve-AndAcquireDependencies {
             $libCopy = Join-Path $LibsDir $builtJar.Name
             Copy-Item -LiteralPath $builtJar.FullName -Destination $libCopy -Force
         }
-        $note = "Converted Forge 1.20.1 jar -> NeoForge 26.2 (converter exit $code)"
+        $note = "Converted $SourceMinecraftVersion jar -> NeoForge $MinecraftVersion (converter exit $code)"
         if (-not $libCopy) { $note += '. Project scaffolded but jar build did not produce build/libs; compile the converted-deps project manually.' }
-        $resolved.Add((New-ResolvedDependency -Record $rec -Action 'convert' -Status $(if ($libCopy) { 'converted-jar' } else { 'converted-scaffold' }) -Note $note -JarPath $libCopy -ConvertedProject $depOut -TomlRange '[1.0,)' -ModrinthSlug $modrinthSlug)) | Out-Null
+        $resolved.Add((New-ResolvedDependency -Record $rec -Action 'convert' -Status $(if ($libCopy) { 'converted-jar' } else { 'converted-scaffold' }) -Note $note -JarPath $libCopy -SourceJarPath $srcJar -ConvertedProject $depOut -TomlRange '[1.0,)' -ModrinthSlug $modrinthSlug)) | Out-Null
     }
 
     return $resolved.ToArray()
@@ -648,9 +731,11 @@ function New-DependencyGradlePlan {
 
     foreach ($d in $Resolved) {
         if ($d.Action -in @('skip') -or $d.Status -in @('platform', 'visited')) { continue }
-        if ($d.Status -in @('missing-official', 'needs-convert', 'needs-jar', 'blocked', 'skipped-optional')) { continue }
+        if ($d.Status -in @('missing-official', 'needs-convert', 'needs-jar', 'blocked', 'skipped-optional', 'source-downloaded')) { continue }
 
+        $hasCompileArtifact = $false
         if ($d.MavenCoord) {
+            $hasCompileArtifact = $true
             $impl.Add("    implementation `"$($d.MavenCoord)`"") | Out-Null
             foreach ($r in @($d.Repositories)) {
                 if (-not $r) { continue }
@@ -667,6 +752,7 @@ function New-DependencyGradlePlan {
                 }
             }
         } elseif ($d.JarPath) {
+            $hasCompileArtifact = $true
             $leaf = Split-Path $d.JarPath -Leaf
             $impl.Add("    implementation files('libs/$leaf')") | Out-Null
         }
@@ -676,15 +762,17 @@ function New-DependencyGradlePlan {
             $includes.Add("includeBuild '$rel'") | Out-Null
         }
 
-        if ($d.ModId -and -not $modSeen.ContainsKey($d.ModId)) {
+        # Only declare toml deps when a target compile artifact exists.
+        if ($hasCompileArtifact -and $d.ModId -and -not $modSeen.ContainsKey($d.ModId)) {
             $modSeen[$d.ModId] = $true
             $range = $d.TomlVersionRange
             if (-not $range) { $range = '[1.0,)' }
+            $depType = if ($d.Required) { 'required' } else { 'optional' }
             $toml.Add(@"
 
 [[dependencies.`${mod_id}]]
 modId="$($d.ModId)"
-type="required"
+type="$depType"
 versionRange="$range"
 ordering="AFTER"
 side="BOTH"
@@ -716,15 +804,18 @@ function Write-DependencyReport {
     $rows.Add("Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm')") | Out-Null
     $rows.Add('') | Out-Null
     $rows.Add('The converter reads `mods.toml` / `neoforge.mods.toml`, Gradle coordinates, jar-in-jar metadata, and Java imports.') | Out-Null
-    $rows.Add('Official NeoForge 26.2 artifacts are downloaded. Required mods with no 26.2 build are decompiled and converted.') | Out-Null
+    $rows.Add('For each detected dependency it pulls the **detected source-version** jar and the **destination 26.2** jar when Modrinth has them.') | Out-Null
+    $rows.Add('Target jars land in `libs/` (compile classpath). Source jars land in `libs-source/` (API comparison evidence).') | Out-Null
+    $rows.Add('Required mods with no 26.2 build are decompiled and converted from the detected source version.') | Out-Null
     $rows.Add('') | Out-Null
-    $rows.Add('| Mod ID | Required | Action | Status | Detail |') | Out-Null
-    $rows.Add('|--------|----------|--------|--------|--------|') | Out-Null
+    $rows.Add('| Mod ID | Required | Action | Status | Target jar | Source jar | Detail |') | Out-Null
+    $rows.Add('|--------|----------|--------|--------|------------|------------|--------|') | Out-Null
     foreach ($d in $Resolved) {
         $detail = ([string]$d.Note) -replace '\|', '/'
         if ($d.MavenCoord) { $detail += " ($($d.MavenCoord))" }
-        if ($d.JarPath) { $detail += " jar=$(Split-Path $d.JarPath -Leaf)" }
-        $rows.Add("| $($d.ModId) | $($d.Required) | $($d.Action) | $($d.Status) | $detail |") | Out-Null
+        $targetLeaf = if ($d.JarPath) { Split-Path $d.JarPath -Leaf } else { '' }
+        $sourceLeaf = if ($d.SourceJarPath) { Split-Path $d.SourceJarPath -Leaf } else { '' }
+        $rows.Add("| $($d.ModId) | $($d.Required) | $($d.Action) | $($d.Status) | $targetLeaf | $sourceLeaf | $detail |") | Out-Null
     }
     $gaps = @($Resolved | Where-Object { $_.Status -in @('missing-official', 'needs-convert', 'needs-jar', 'blocked') })
     if ($null -eq $gaps) { $gaps = @() }
@@ -738,7 +829,7 @@ function Write-DependencyReport {
             $rows.Add("- **$($g.ModId)** ($($g.Status)): $($g.Note)") | Out-Null
         }
         $rows.Add('') | Out-Null
-        $rows.Add('Place missing 1.20.1 jars in `-DependencyJarDir` and re-run, or wait for an official 26.2 port.') | Out-Null
+        $rows.Add('Place missing source-version jars in `-DependencyJarDir` and re-run, or wait for an official 26.2 port.') | Out-Null
     }
     $rows.Add('') | Out-Null
     $rows.Add('## Detected (pre-resolve)') | Out-Null

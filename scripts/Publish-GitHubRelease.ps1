@@ -7,9 +7,9 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$Tag = 'v2.10.8',
+    [string]$Tag = 'v2.10.9',
     [string]$Repo = 'RobbieB1980/LegacyJavaConverter',
-    [string]$Name = 'RB Legacy Java Converter 2.10.8'
+    [string]$Name = 'RB Legacy Java Converter 2.10.9'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -68,11 +68,14 @@ Converts **Forge/NeoForge 1.20.1–26.1** (and decompiled jars) → **NeoForge 2
 | ``RB-Legacy-Java-Converter-Setup.exe`` | Windows installer (self-contained; **embeds** portable toolset only) |
 | ``RB-Legacy-Java-Converter-Portable.zip`` | No install — extract and run ``Start-Converter.bat`` or the EXE |
 
-### What's new in 2.10.8
+### What's new in 2.10.9
 
-- Knowledge MCP + repair prompts use `C:\gokuai\Data` and `C:\gokuai\DataIndex\minecraft-knowledge` (`goku-data.db` unchanged)
-- Fix-in-Grok continues to launch `C:\gokuai\Start-GokuAI.ps1`
-- Includes 2.10.6/2.10.7 CASE-005 + GokuAI handoff remaps
+- Dual-version dependency pull: detected source MC jar + NeoForge 26.2 jar (`libs-source/` + `libs/`)
+- Import detection fix (JEI/`mezz.jei` SimpleMatch); soft-dep exclude keeps integrations when target jar present
+- Fix-in-Grok PromptFile pointer (no multiline bat truncation of FAILED OUTPUT path)
+- Capability stub multiline-safe; Easy Mob Farm CASE-006 compile-green remaps
+- Knowledge backup on GitHub: `knowledge-backup/262r` + solved CASE notes
+- 262r agent search order: converter/shards first before inventing remaps
 
 ### Requirements
 
