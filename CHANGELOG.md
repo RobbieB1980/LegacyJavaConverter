@@ -1,3 +1,10 @@
+## 2.10.7 — 2026-09-05
+
+Fix-in-Grok failure handoff now launches **GokuAI**:
+
+- GUI + `Open-GrokRepairSession.ps1` call `C:\gokuai\Start-GokuAI.ps1` with workspace `C:\gokuai\projects\RB-Legacy-Java-Converter`.
+- Replaces the old `C:\rmblocal_llm\Start-GrokBuild.ps1` path.
+- Prompt still forces MIGRATION_EVIDENCE / primer_changes / CASE files before inventing fixes; knowledge roots remain under `C:\rmblocal_llm\knowledge`.
 ## 2.10.6 — 2026-09-04 / 2026-09-05
 
 CASE-005 in-game bootstrap crash on NeoForge 26.2.0.72:

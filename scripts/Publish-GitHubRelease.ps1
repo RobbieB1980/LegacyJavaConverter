@@ -3,13 +3,13 @@
   Create/update a GitHub Release and upload portable + setup artifacts from dist/.
 
 .EXAMPLE
-  .\scripts\Publish-GitHubRelease.ps1 -Tag v2.10.6
+  .\scripts\Publish-GitHubRelease.ps1 -Tag v2.10.7
 #>
 [CmdletBinding()]
 param(
-    [string]$Tag = 'v2.10.6',
+    [string]$Tag = 'v2.10.7',
     [string]$Repo = 'RobbieB1980/LegacyJavaConverter',
-    [string]$Name = 'RB Legacy Java Converter 2.10.6'
+    [string]$Name = 'RB Legacy Java Converter 2.10.7'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -68,13 +68,10 @@ Converts **Forge/NeoForge 1.20.1–26.1** (and decompiled jars) → **NeoForge 2
 | ``RB-Legacy-Java-Converter-Setup.exe`` | Windows installer (self-contained; **embeds** portable toolset only) |
 | ``RB-Legacy-Java-Converter-Portable.zip`` | No install — extract and run ``Start-Converter.bat`` or the EXE |
 
-### What's new in 2.10.6
+### What's new in 2.10.7
 
-- **CASE-005 in-game verified** on NeoForge 26.2.0.72 (load + world join + clean exit)
-- Custom GameRules via ``DeferredRegister(Registries.GAME_RULE)`` + ``new GameRule<>`` (static ``GameRules.registerBoolean`` froze the registry)
-- Hardened ``registerBlock`` / ``registerItem`` id pass; ``#forge:`` → ``#c:`` tags; spawn-egg template restore; ``Attributes.TEMPT_RANGE`` for TemptGoal entities
-- **Recipe ingredient cleanup**: ``{"item":"id"}`` / ``{"tag":"id"}`` → ``"id"`` / ``"#id"`` (``Invoke-Minecraft262RecipeIngredientPass``)
-- Includes 2.10.0–2.10.5 CASE-005 remaps + Fix-in-Grok handoff tooling
+- **Fix in Grok** now launches `C:\gokuai\Start-GokuAI.ps1` (GokuAI) against `C:\gokuai\projects\RB-Legacy-Java-Converter`
+- Includes all 2.10.6 CASE-005 in-game remaps + recipe ingredient string pass
 
 ### Requirements
 

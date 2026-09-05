@@ -7,7 +7,7 @@ namespace RB.LegacyJavaConverter;
 public sealed class MainForm : Form
 {
     private static string AppVersion =>
-        Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "2.10.6";
+        Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "2.10.7";
 
     private readonly RadioButton _radProject = new() { Text = "Mode A: Project folder (Forge source with src/)", AutoSize = true, Checked = true };
     private readonly RadioButton _radJar = new() { Text = "Mode B: Finished .jar file (decompile, not decrypt)", AutoSize = true };
@@ -863,7 +863,7 @@ public sealed class MainForm : Form
                     _btnFixGrok.Enabled = true;
                     if (File.Exists(Path.Combine(_lastOutput, "compile-errors.log")))
                         AppendLog("See compile-errors.log for the first remaining build error.", Color.Khaki);
-                    AppendLog("Click \"Fix in Grok\" to open GrokBuild with primers/cases first.", Color.Khaki);
+                    AppendLog("Click \"Fix in Grok\" to open GokuAI with primers/cases first.", Color.Khaki);
                     LaunchGrokRepairSession(offerPrompt: true);
                 }
             }
@@ -874,7 +874,7 @@ public sealed class MainForm : Form
     }
 
     /// <summary>
-    /// Opens C:\rmblocal_llm\Start-GrokBuild.ps1 against the station converter workspace,
+    /// Opens C:\gokuai\Start-GokuAI.ps1 against the GokuAI converter workspace,
     /// with a prompt that forces MIGRATION_EVIDENCE / primers / CASE files before inventing fixes.
     /// </summary>
     private void LaunchGrokRepairSession(bool offerPrompt)
@@ -891,22 +891,22 @@ public sealed class MainForm : Form
         {
             var ask = MessageBox.Show(this,
                 "Conversion failed but a scaffold was written.\n\n" +
-                "Open GrokBuild (C:\\rmblocal_llm) to repair it?\n" +
+                "Open GokuAI (C:\\gokuai) to repair it?\n" +
                 "The session will be instructed to read MIGRATION_EVIDENCE, primers, and CASE files BEFORE inventing fixes.",
-                "Fix in GrokBuild",
+                "Fix in GokuAI",
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Question);
             if (ask != DialogResult.Yes) return;
         }
 
-        const string rbRoot = @"C:\rmblocal_llm";
-        var startGrok = Path.Combine(rbRoot, "Start-GrokBuild.ps1");
-        var workspace = Path.Combine(rbRoot, "projects", "RB-Legacy-Java-Converter");
-        if (!File.Exists(startGrok))
+        const string gokuRoot = @"C:\gokuai";
+        var startGoku = Path.Combine(gokuRoot, "Start-GokuAI.ps1");
+        var workspace = Path.Combine(gokuRoot, "projects", "RB-Legacy-Java-Converter");
+        if (!File.Exists(startGoku))
         {
             MessageBox.Show(this,
-                "Start-GrokBuild.ps1 was not found at:\n" + startGrok +
-                "\n\nInstall/update RB Local LLM first.",
+                "Start-GokuAI.ps1 was not found at:\n" + startGoku +
+                "\n\nInstall/update GokuAI first (C:\\gokuai).",
                 "Fix in Grok", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
@@ -924,9 +924,9 @@ public sealed class MainForm : Form
             File.WriteAllText(promptPath, BuildGrokRepairPrompt(output), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
 
             var args =
-                "-NoExit -ExecutionPolicy Bypass -File " + Quote(startGrok) +
+                "-NoExit -ExecutionPolicy Bypass -File " + Quote(startGoku) +
                 " -ProjectPath " + Quote(workspace) +
-                " -Root " + Quote(rbRoot) +
+                " -Root " + Quote(gokuRoot) +
                 " -PromptFile " + Quote(promptPath);
 
             Process.Start(new ProcessStartInfo
@@ -937,13 +937,13 @@ public sealed class MainForm : Form
                 WorkingDirectory = workspace
             });
 
-            AppendLog("Launched Start-GrokBuild.ps1 for repair.", Color.LightSkyBlue);
+            AppendLog("Launched Start-GokuAI.ps1 for repair.", Color.LightSkyBlue);
             AppendLog("Workspace: " + workspace, Color.DimGray);
             AppendLog("Prompt file: " + promptPath, Color.DimGray);
         }
         catch (Exception ex)
         {
-            AppendLog("Failed to launch GrokBuild: " + ex.Message, Color.Salmon);
+            AppendLog("Failed to launch GokuAI: " + ex.Message, Color.Salmon);
             MessageBox.Show(this, ex.Message, "Fix in Grok", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
