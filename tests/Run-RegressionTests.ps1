@@ -118,6 +118,16 @@ foreach ($projectPath in @('src\RB.LegacyJavaConverter\RB.LegacyJavaConverter.cs
 }
 Assert-Equal ((Get-Content -LiteralPath (Join-Path $repo 'version.txt') -Raw).Trim()) '2.11.0' 'tracked version matches shared product version'
 
+$releaseMetadataPath = Join-Path $repo 'lib\ReleaseMetadata.ps1'
+Assert-True (Test-Path -LiteralPath $releaseMetadataPath) 'release metadata helper exists'
+. $releaseMetadataPath
+$releaseIdentity = Get-ReleaseIdentity -VersionPropsPath $versionPropsPath
+Assert-Equal $releaseIdentity.Tag 'v2.11.0' 'release tag derives from shared product version'
+Assert-Equal $releaseIdentity.Name 'RB Legacy Java Converter 2.11.0' 'release name derives from shared product version'
+$usageText = Get-Content -LiteralPath (Join-Path $repo 'docs\USAGE.md') -Raw
+Assert-True ($usageText -match '26\.2\.0\.72') 'usage guide pins current NeoForge build'
+Assert-True ($usageText -notmatch '26\.2\.0\.66') 'usage guide excludes stale NeoForge build'
+
 $portableManifest = Get-Content -LiteralPath $portableManifestPath -Raw | ConvertFrom-Json
 $manifestSources = @($portableManifest.entries | ForEach-Object { $_.sourcePath })
 foreach ($requiredSource in @(

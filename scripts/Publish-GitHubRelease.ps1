@@ -3,18 +3,22 @@
   Create/update a GitHub Release and upload portable + setup artifacts from dist/.
 
 .EXAMPLE
-  .\scripts\Publish-GitHubRelease.ps1 -Tag v2.10.8
+  .\scripts\Publish-GitHubRelease.ps1
 #>
 [CmdletBinding()]
 param(
-    [string]$Tag = 'v2.10.13',
+    [string]$Tag = '',
     [string]$Repo = 'RobbieB1980/LegacyJavaConverter',
-    [string]$Name = 'RB Legacy Java Converter 2.10.13'
+    [string]$Name = ''
 )
 
 $ErrorActionPreference = 'Stop'
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot '..')
 $Dist = Join-Path $RepoRoot 'dist'
+. (Join-Path $RepoRoot 'lib\ReleaseMetadata.ps1')
+$identity = Get-ReleaseIdentity -VersionPropsPath (Join-Path $RepoRoot 'eng\Version.props')
+if ([string]::IsNullOrWhiteSpace($Tag)) { $Tag = $identity.Tag }
+if ([string]::IsNullOrWhiteSpace($Name)) { $Name = $identity.Name }
 
 $setup = Join-Path $Dist 'RB-Legacy-Java-Converter-Setup.exe'
 $portable = Join-Path $Dist 'RB-Legacy-Java-Converter-Portable.zip'
@@ -68,16 +72,11 @@ Converts **Forge/NeoForge 1.20.1Ã¢â‚¬â€œ26.1** (and decompiled jars) �
 | ``RB-Legacy-Java-Converter-Setup.exe`` | Windows installer (self-contained; **embeds** portable toolset only) |
 | ``RB-Legacy-Java-Converter-Portable.zip`` | No install Ã¢â‚¬â€ extract and run ``Start-Converter.bat`` or the EXE |
 
-### What's new in 2.10.13
+### What's new in $($identity.Version)
 
-- Catch-up: GokuAI-only knowledge index policy in overlay; SkillsOnly sync for new workspaces; launcher repair preset alignment
-
-### What's new in 2.10.12
-
-- Fix-in-Grok prompt integrates migration skills/agents: ``/repair-failed-262-output``, evidence packet, ``mc-research``/``mc-code``/``mc-reviewer``, ``/validate-destination-build``, ``/encode-262r-remap``
-- ``gokuai-workspace-overlay`` + ``scripts/Sync-GokuaiConverterWorkspace.ps1`` keep ``C:\gokuai\projects\RB-Legacy-Java-Converter\.grok`` in sync
-- ``scripts/Download-Portable.ps1`` downloads Portable.zip from GitHub Releases
-- Destination JDK 25 pin retained from 2.10.11
+- vNext foundation with reproducible release contents and staged validation contracts
+- JavaParser analysis worker and PowerShell bridge in shadow mode
+- Hardened NeoForge 26.2 transforms, golden fixtures, and conversion-manifest schema
 
 ### Requirements
 
