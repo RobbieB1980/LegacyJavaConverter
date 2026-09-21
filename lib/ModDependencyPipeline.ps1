@@ -490,7 +490,7 @@ function Resolve-AndAcquireDependencies {
         [string]$MinecraftVersion = '26.2',
         [string]$SourceMinecraftVersion = '',
         [string]$SourceLibsDir = '',
-        [string]$NeoVersion = '26.2.0.66',
+        [string]$NeoVersion = '26.2.0.72',
         [string]$GeckoLibVersion = '5.5.3',
         [int]$DependencyDepth = 0,
         [int]$MaxDependencyDepth = 2,

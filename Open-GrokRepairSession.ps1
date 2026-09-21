@@ -14,7 +14,7 @@ $ErrorActionPreference = 'Stop'
 $start = Join-Path $GokuRoot 'Start-GokuAI.ps1'
 $grokHome = Join-Path $GokuRoot 'grok-home'
 $grok = Join-Path $grokHome 'bin\grok.exe'
-if (-not (Test-Path $start)) { throw "Missing $start — install/update GokuAI first." }
+if (-not (Test-Path $start)) { throw "Missing $start - install/update GokuAI first." }
 if (-not (Test-Path $FailedOutput)) { throw "Failed output missing: $FailedOutput" }
 
 . (Join-Path $PSScriptRoot 'lib\ConversionCore.ps1')

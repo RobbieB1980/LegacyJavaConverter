@@ -26,7 +26,7 @@ param(
     [string]$JavaExe = '',
     [switch]$ContinueToNeoForge262,
     [switch]$CompileAfterConvert,
-    [string]$NeoVersion = '26.2.0.66',
+    [string]$NeoVersion = '26.2.0.72',
     [string]$MinecraftVersion = '26.2',
     [string]$SourceVersion = '',
     [switch]$DryRun

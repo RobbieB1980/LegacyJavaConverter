@@ -2,7 +2,7 @@ function ConvertTo-NormalizedMinecraftVersion {
     [CmdletBinding()]
     param([AllowEmptyString()][string]$Value)
     if ([string]::IsNullOrWhiteSpace($Value)) { return '' }
-    $hits = [regex]::Matches($Value, '(?<!\d)(?:1\.(?:20|21)\.\d+|2[2-6](?:\.\d+){1,2})(?!\d)')
+    $hits = [regex]::Matches($Value, '(?<![\d.])(?:1\.(?:20|21)\.\d+|2[2-6](?:\.\d+){1,3})(?![\d.])')
     if ($hits.Count -eq 0) { return '' }
     return $hits[0].Value
 }
@@ -136,6 +136,7 @@ function Get-MigrationRoute {
     $v = ConvertTo-NormalizedMinecraftVersion $SourceVersion
     if ($Loader -match 'fabric|quilt') { return 'unsupported-fabric-quilt' }
     if ($v -eq '1.20.1') { return 'forge-1.20.1' }
+    if ($v -match '^1\.20\.[2-4]$') { return 'forge-1.20.2-1.20.4' }
     if ($v -match '^1\.21\.') { return 'neoforge-1.21.x' }
     if ($v -match '^2[2-5]\.\d+') { return 'neoforge-22-to-25' }
     if ($v -match '^26\.[01](?:\.|$)') { return 'neoforge-26.0-26.1' }
@@ -149,6 +150,7 @@ function Get-RecommendedMigrationPasses {
     $common = @('mechanical-java', 'neoforge-26-api', 'config-order', 'registry', 'block-item-id', 'geckolib', 'mod-entry', 'event-bus', 'assets')
     switch ($Route) {
         'forge-1.20.1'       { return @('srg-1.20.1') + $common + @('mcreator-1.20.1') }
+        'forge-1.20.2-1.20.4' { return $common + @('mcreator-1.20.1') }
         'neoforge-1.21.x'    { return $common + @('mcreator-1.21.x') }
         'neoforge-22-to-25'  { return $common }
         'neoforge-26.0-26.1' { return $common }
@@ -305,16 +307,25 @@ function Get-PrimerChangeIndex {
 function Get-PrimerMigrationChain {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$SourceVersion, $Index = (Get-PrimerChangeIndex))
+    $normalized = ConvertTo-NormalizedMinecraftVersion $SourceVersion
+    if ($normalized) { $SourceVersion = $normalized }
     $aliases = @{
-        '1.20.2'='1.20.1'; '1.20.3'='1.20.1'; '1.20.4'='1.20.4'; '1.21.2'='1.21.2/3'; '1.21.3'='1.21.2/3'
+        '1.20.2'='1.20.1'; '1.20.3'='1.20.1'; '1.20.4'='1.20.4'; '1.21.0'='1.21'
+        '1.21.2'='1.21.2/3'; '1.21.3'='1.21.2/3'
         '26.1.1'='26.1'; '26.1.2'='26.1'
     }
-    $start = if ($aliases.ContainsKey($SourceVersion)) { $aliases[$SourceVersion] } else { $SourceVersion }
+    $start = if ($SourceVersion -match '^2[2-5]\.' -or $SourceVersion -match '^26\.[01](?:\.|$)') {
+        '26.1'
+    } elseif ($aliases.ContainsKey($SourceVersion)) {
+        $aliases[$SourceVersion]
+    } else {
+        $SourceVersion
+    }
     $all = @($Index.transitions)
     $position = -1
     for ($i = 0; $i -lt $all.Count; $i++) { if ($all[$i].from -eq $start) { $position = $i; break } }
-    if ($SourceVersion -eq '26.2') { return @() }
-    if ($position -lt 0) { return @($all) }
+    if ($SourceVersion -match '^26\.2(?:\.|$)') { return @() }
+    if ($position -lt 0) { return @() }
     return @($all[$position..($all.Count - 1)])
 }
 

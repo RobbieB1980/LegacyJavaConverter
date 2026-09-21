@@ -29,6 +29,9 @@ $routeCases = @(
 )
 Assert-Equal (ConvertTo-NormalizedMinecraftVersion 'neoforge-26.2.0.72') '26.2.0.72' 'four-part NeoForge version normalization'
 Assert-Equal (ConvertTo-NormalizedMinecraftVersion '[26.1.0.9,26.2)') '26.1.0.9' 'four-part NeoForge range normalization'
+Assert-Equal (ConvertTo-NormalizedMinecraftVersion '26.2') '26.2' 'two-part target normalization'
+Assert-Equal (ConvertTo-NormalizedMinecraftVersion 'minecraft 1.21.11') '1.21.11' 'three-part Minecraft normalization'
+Assert-Equal (ConvertTo-NormalizedMinecraftVersion '126.2.0.72') '' 'embedded numeric token rejected'
 foreach ($case in $routeCases) {
     Assert-Equal (Get-MigrationRoute -SourceVersion $case[0] -Loader $case[1]) $case[2] "route $($case[0])"
 }
