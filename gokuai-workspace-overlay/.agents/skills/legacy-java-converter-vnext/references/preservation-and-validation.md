@@ -12,14 +12,20 @@ Compare source and output rather than checking only whether output files exist.
   persistence, synchronization, and custom behaviour;
 - dependencies, access transformers/wideners, mixins, services, and metadata.
 
+## Manifest categories
+
+Record independent source/destination counts, missing entries, and evidence
+paths for `assets`, `models`, `items`, `entities`, and `aiBehavior`.
+
 ## Validation gates
 
-1. Structural: expected source/resources and manifest inventory are present.
-2. Static: no unresolved placeholders, disabled features, or silent drops.
-3. Build: JDK 25 full Gradle build succeeds and produces the intended jar.
-4. Load: NeoForge starts and registries, resources, and data load cleanly.
-5. Content: representative assets, models, blocks, items, and entities appear.
-6. Behaviour: AI, interactions, persistence, networking, and key mechanics
-   match the original mod as closely as the target APIs permit.
+1. `build`: JDK 25 full Gradle build succeeds and produces the intended jar.
+2. `launch`: NeoForge starts and remains alive through the smoke window.
+3. `registryData`: registries, resources, and data load cleanly.
+4. `content`: representative assets, models, blocks, items, and entities appear.
+5. `behavior`: AI, interactions, persistence, networking, and key mechanics
+  match the original mod as closely as the target APIs permit.
 
-Record unperformed gates as unverified, never passed.
+Each gate is `passed`, `failed`, `not_tested`, or `not_applicable`, with evidence
+and notes. A clean build sets only `build`; it never implies launch, content, or
+behavior. Record unperformed gates as `not_tested`, never passed.

@@ -125,7 +125,7 @@ Copy-Item -LiteralPath $MyInvocation.MyCommand.Path -Destination (Join-Path $too
 if (-not $SkillsOnly) {
     $sourceLib = if ($bundle.Repository) { Join-Path $bundle.Root 'lib' } else { Join-Path $bundle.ToolRoot 'lib' }
     $sourceAst = if ($bundle.Repository) { Join-Path $bundle.Root 'tools\lib\ast-worker' } else { Join-Path $sourceLib 'ast-worker' }
-    foreach ($relative in @('ConversionCore.ps1', 'ConversionManifest.ps1', 'AstWorkerBridge.ps1', 'SolvedConversionIndex.json')) {
+    foreach ($relative in @('ConversionCore.ps1', 'ConversionManifest.ps1', 'SolutionsIndex.ps1', 'AstWorkerBridge.ps1', 'SolvedConversionIndex.json')) {
         Assert-RequiredFile (Join-Path $sourceLib $relative) "lib\$relative"
     }
     Copy-TreeChecked $sourceLib (Join-Path $toolsDestination 'lib') 'repair libraries'
@@ -140,7 +140,7 @@ $requiredDestination = @(
     'tools\Build-WithDestinationJava.ps1',
     'tools\Lint-MigrationSkills.ps1'
 )
-if (-not $SkillsOnly) { $requiredDestination += @('tools\lib\ConversionManifest.ps1', 'tools\lib\AstWorkerBridge.ps1') }
+if (-not $SkillsOnly) { $requiredDestination += @('tools\lib\ConversionManifest.ps1', 'tools\lib\SolutionsIndex.ps1', 'tools\lib\AstWorkerBridge.ps1') }
 foreach ($relative in $requiredDestination) { Assert-RequiredFile (Join-Path $Workspace $relative) $relative }
 
 $unresolved = Select-String -LiteralPath (Join-Path $Workspace '.codex\config.toml') -Pattern '__[A-Z_]+__'

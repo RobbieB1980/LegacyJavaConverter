@@ -37,9 +37,18 @@ function New-ConversionManifest {
     foreach ($stage in @('intake','deterministic','javaParsed','built','clientBooted','worldLoaded','contentSmokeTested')) {
         $validation[$stage] = [ordered]@{ status = 'notRun'; evidencePath = '' }
     }
+    foreach ($gate in @('build','launch','registryData','content','behavior')) {
+        $validation[$gate] = [ordered]@{ status = 'not_tested'; evidence = @(); notes = @() }
+    }
+
+    $preservation = [ordered]@{}
+    foreach ($category in @('assets','models','items','entities','aiBehavior')) {
+        $preservation[$category] = [ordered]@{ sourceCount = 0; destinationCount = 0; missingEntries = @(); evidencePaths = @() }
+    }
 
     return [ordered]@{
-        schemaVersion = 1
+        schemaVersion = 2
+        status = 'repair_required'
         run = [ordered]@{ createdUtc = [DateTime]::UtcNow.ToString('o') }
         input = [ordered]@{
             path = $resolved.Replace('\', '/')
@@ -50,7 +59,53 @@ function New-ConversionManifest {
         converter = [ordered]@{ version = $ConverterVersion }
         rules = @()
         validation = $validation
+        preservation = $preservation
     }
+}
+
+function Update-ManifestOverallStatus {
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$Manifest)
+    $gates = @('build','launch','registryData','content','behavior') | ForEach-Object { $Manifest.validation[$_] }
+    $missing = @($Manifest.preservation.PSObject.Properties | ForEach-Object { @($_.Value.missingEntries) })
+    if (($gates | Where-Object { $_.status -eq 'failed' }).Count -gt 0 -or $missing.Count -gt 0) {
+        $Manifest.status = 'repair_required'
+    } elseif (($gates | Where-Object { $_.status -ne 'passed' }).Count -gt 0) {
+        $Manifest.status = 'not_tested'
+    } else {
+        $Manifest.status = 'complete'
+    }
+}
+
+function Set-ManifestGate {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][System.Collections.IDictionary]$Manifest,
+        [Parameter(Mandatory)][ValidateSet('build','launch','registryData','content','behavior')][string]$Gate,
+        [Parameter(Mandatory)][ValidateSet('passed','failed','not_tested','not_applicable')][string]$Status,
+        [string[]]$Evidence = @(),
+        [string[]]$Notes = @()
+    )
+    $Manifest.validation[$Gate] = [ordered]@{ status = $Status; evidence = @($Evidence | ForEach-Object { ([string]$_).Replace('\','/') }); notes = @($Notes) }
+    Update-ManifestOverallStatus -Manifest $Manifest
+}
+
+function Set-ManifestPreservation {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][System.Collections.IDictionary]$Manifest,
+        [Parameter(Mandatory)][ValidateSet('assets','models','items','entities','aiBehavior')][string]$Category,
+        [int]$SourceCount = 0,
+        [int]$DestinationCount = 0,
+        [string[]]$MissingEntries = @(),
+        [string[]]$EvidencePaths = @()
+    )
+    $Manifest.preservation[$Category] = [ordered]@{
+        sourceCount = [Math]::Max(0, $SourceCount)
+        destinationCount = [Math]::Max(0, $DestinationCount)
+        missingEntries = @($MissingEntries | ForEach-Object { [string]$_ })
+        evidencePaths = @($EvidencePaths | ForEach-Object { ([string]$_).Replace('\','/') })
+    }
+    Update-ManifestOverallStatus -Manifest $Manifest
 }
 
 function Add-ManifestRule {

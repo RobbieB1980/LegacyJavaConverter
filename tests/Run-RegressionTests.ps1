@@ -142,7 +142,7 @@ foreach ($requiredSource in @(
     'Convert-Forge1201-ToNeoForge262.ps1', 'Convert-JarToProject.ps1', 'Convert-OldJarToNeoForge262.ps1',
     'Open-CodexRepairSession.ps1', 'Open-GrokRepairSession.ps1', 'Build-WithDestinationJava.ps1', 'Lint-MigrationSkills.ps1',
     'scripts/Sync-CodexConverterWorkspace.ps1', 'scripts/Sync-GokuaiConverterWorkspace.ps1', 'gokuai-workspace-overlay',
-    'lib/SolvedConversionIndex.json', 'lib/PrimerChangeIndex.json', 'lib/DependencyCatalog.json',
+    'lib/SolvedConversionIndex.json', 'lib/SolutionsIndex.ps1', 'lib/PrimerChangeIndex.json', 'lib/DependencyCatalog.json',
     'lib/overlays', 'lib/client-items', 'lib/primer_changes', 'lib/dep_changes', 'docs'
 )) {
     Assert-True ($manifestSources -contains $requiredSource) "portable manifest source $requiredSource"
