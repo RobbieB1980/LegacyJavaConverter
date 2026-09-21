@@ -107,23 +107,31 @@ Assert-True (Test-Path -LiteralPath $portableManifestPath) 'portable manifest ex
 Assert-True (Test-Path -LiteralPath $portableValidatorPath) 'portable manifest validator exists'
 
 [xml]$versionProps = Get-Content -LiteralPath $versionPropsPath -Raw
-Assert-Equal $versionProps.Project.PropertyGroup.Version '2.11.0' 'shared product version'
-Assert-Equal $versionProps.Project.PropertyGroup.FileVersion '2.11.0.0' 'shared file version'
-Assert-Equal $versionProps.Project.PropertyGroup.InformationalVersion '2.11.0-vnext.1' 'shared informational version'
+Assert-Equal $versionProps.Project.PropertyGroup.Version '3.0.0' 'shared product version'
+Assert-Equal $versionProps.Project.PropertyGroup.FileVersion '3.0.0.0' 'shared file version'
+Assert-Equal $versionProps.Project.PropertyGroup.InformationalVersion '3.0.0' 'shared informational version'
+Assert-Equal $versionProps.Project.PropertyGroup.IncludeSourceRevisionInInformationalVersion 'false' 'product version excludes source revision suffix'
 foreach ($projectPath in @('src\RB.LegacyJavaConverter\RB.LegacyJavaConverter.csproj', 'src\RB.LegacyJavaConverter.Setup\RB.LegacyJavaConverter.Setup.csproj')) {
     [xml]$project = Get-Content -LiteralPath (Join-Path $repo $projectPath) -Raw
     $versionImport = @($project.Project.Import | Where-Object { $_.Project -eq '..\..\eng\Version.props' })
     Assert-Equal $versionImport.Count 1 "shared version import $projectPath"
     Assert-True ($null -eq $project.Project.PropertyGroup.Version) "no literal product version $projectPath"
 }
-Assert-Equal ((Get-Content -LiteralPath (Join-Path $repo 'version.txt') -Raw).Trim()) '2.11.0' 'tracked version matches shared product version'
+Assert-Equal ((Get-Content -LiteralPath (Join-Path $repo 'version.txt') -Raw).Trim()) '3.0.0' 'tracked version matches shared product version'
 
 $releaseMetadataPath = Join-Path $repo 'lib\ReleaseMetadata.ps1'
 Assert-True (Test-Path -LiteralPath $releaseMetadataPath) 'release metadata helper exists'
 . $releaseMetadataPath
 $releaseIdentity = Get-ReleaseIdentity -VersionPropsPath $versionPropsPath
-Assert-Equal $releaseIdentity.Tag 'v2.11.0' 'release tag derives from shared product version'
-Assert-Equal $releaseIdentity.Name 'RB Legacy Java Converter 2.11.0' 'release name derives from shared product version'
+Assert-Equal $releaseIdentity.Tag 'v3.0.0' 'release tag derives from shared product version'
+Assert-Equal $releaseIdentity.Name 'RB Legacy Java Converter 3.0.0' 'release name derives from shared product version'
+$mainFormText = Get-Content -LiteralPath (Join-Path $repo 'src\RB.LegacyJavaConverter\MainForm.cs') -Raw
+$setupFormText = Get-Content -LiteralPath (Join-Path $repo 'src\RB.LegacyJavaConverter.Setup\SetupForm.cs') -Raw
+Assert-True ($mainFormText -match '\?\? "3\.0\.0"') 'GUI fallback version is 3.0.0'
+Assert-True ($setupFormText -notmatch '2\.10\.9') 'installer has no stale 2.10.9 fallback'
+Assert-True (([regex]::Matches($setupFormText, '\?\? "3\.0\.0"')).Count -eq 3) 'installer fallback versions are 3.0.0'
+$readmeText = Get-Content -LiteralPath (Join-Path $repo 'README.md') -Raw
+Assert-True ($readmeText -match 'baseline: 3\.0\.0 \(NeoForge 26\.2\)') 'README reports 3.0.0 baseline'
 $usageText = Get-Content -LiteralPath (Join-Path $repo 'docs\USAGE.md') -Raw
 Assert-True ($usageText -match '26\.2\.0\.72') 'usage guide pins current NeoForge build'
 Assert-True ($usageText -notmatch '26\.2\.0\.66') 'usage guide excludes stale NeoForge build'
@@ -143,7 +151,7 @@ foreach ($requiredSource in @(
 $manifestFixture = Join-Path ([IO.Path]::GetTempPath()) ('legacy-portable-manifest-test-' + [guid]::NewGuid().ToString('N'))
 try {
     New-Item -ItemType Directory -Path $manifestFixture -Force | Out-Null
-    Set-Content -LiteralPath (Join-Path $manifestFixture 'version.txt') -Value '2.11.0' -Encoding ASCII
+    Set-Content -LiteralPath (Join-Path $manifestFixture 'version.txt') -Value '3.0.0' -Encoding ASCII
     $previousErrorAction = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {

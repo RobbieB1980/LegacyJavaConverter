@@ -1,6 +1,6 @@
 # Legacy Java Converter
 
-**vNext development baseline: 2.11.0-vnext.1 (NeoForge 26.2)**
+**vNext development baseline: 3.0.0 (NeoForge 26.2)**
 
 Windows GUI and PowerShell migration assistant for **Forge/NeoForge 1.20.1 through 26.1** → **NeoForge 26.2** ModDevGradle projects.
 

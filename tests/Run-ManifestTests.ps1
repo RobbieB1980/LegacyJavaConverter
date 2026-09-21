@@ -28,7 +28,7 @@ try {
     $input = Join-Path $fixture 'input.jar'
     [IO.File]::WriteAllText($input, 'hello', [Text.UTF8Encoding]::new($false))
 
-    $manifest = New-ConversionManifest -InputPath $input -TargetMinecraft '26.2' -TargetNeoForge '26.2.0.72' -ConverterVersion '2.11.0'
+    $manifest = New-ConversionManifest -InputPath $input -TargetMinecraft '26.2' -TargetNeoForge '26.2.0.72' -ConverterVersion '3.0.0'
     Assert-Equal $manifest.schemaVersion 1 'manifest schema version'
     Assert-Equal $manifest.input.files.Count 1 'manifest input file count'
     Assert-Equal $manifest.input.files[0].path 'input.jar' 'manifest forward-relative input path'

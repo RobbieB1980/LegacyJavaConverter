@@ -2,7 +2,7 @@
 
 ## Baseline
 
-- Product version: `2.11.0-vnext.1`
+- Product version: `3.0.0`
 - Target: Minecraft / NeoForge `26.2` using NeoForge `26.2.0.72`
 - Destination Java: JDK 25
 - Working branch: `vnext`
@@ -49,7 +49,7 @@ A successful converter solution build or portable-package build proves only that
 
 The complete gate was run on 2026-09-21 with these results:
 
-- regression suite: 151 passed;
+- regression suite: 156 passed;
 - Goku failure-handoff suite: 20 passed;
 - golden transformation suite: 3 passed;
 - conversion-manifest suite: 21 passed;

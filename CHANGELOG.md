@@ -1,4 +1,4 @@
-﻿## 2.11.0 — 2026-09-21
+﻿## 3.0.0 — 2026-09-21
 
 vNext foundation and deterministic GokuCodexAI failure handoff:
 
