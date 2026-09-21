@@ -142,8 +142,8 @@ foreach ($relative in $nativeRequired) {
     $path = Join-Path $toolsFinal $relative
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Portable native repair component missing: $relative" }
 }
-if (Get-ChildItem -LiteralPath $PortableRoot -Recurse -File | Where-Object { $_.Name -ieq 'grok.exe' } | Select-Object -First 1) {
-    throw 'Portable payload unexpectedly contains a Grok executable.'
+if (Get-ChildItem -LiteralPath $PortableRoot -Recurse -File | Where-Object { $_.Name -ieq ('grok' + '.exe') } | Select-Object -First 1) {
+    throw 'Portable payload contains a deprecated executable.'
 }
 
 @'

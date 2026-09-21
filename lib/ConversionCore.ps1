@@ -572,8 +572,8 @@ function Get-StationKnowledgeRoot {
         return (Resolve-Path -LiteralPath $Override).Path
     }
     foreach ($candidate in @(
-            $env:RBLOCAL_LLM_KNOWLEDGE,
-            'C:\gokuai\Data'
+            $env:GOKUCODEXAI_DATA,
+            'C:\GokuCodexAI\Data'
         )) {
         if ($candidate -and (Test-Path -LiteralPath $candidate)) {
             return (Resolve-Path -LiteralPath $candidate).Path

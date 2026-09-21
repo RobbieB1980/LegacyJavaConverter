@@ -12,14 +12,17 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-Write-Warning 'Open-GrokRepairSession.ps1 is deprecated; using Open-CodexRepairSession.ps1.'
+Write-Warning 'This deprecated compatibility launcher now uses the native Codex repair launcher.'
 $native = Join-Path $PSScriptRoot 'Open-CodexRepairSession.ps1'
 if (-not (Test-Path -LiteralPath $native -PathType Leaf)) {
     throw "Native repair launcher missing: $native"
 }
+$request = Join-Path $FailedOutput 'CODEX_REPAIR_REQUEST.md'
+if (-not (Test-Path -LiteralPath $request -PathType Leaf)) { throw "Native repair request missing: $request" }
 $arguments = @{
-    FailedOutput = $FailedOutput
-    GokuRoot = $GokuRoot
+    ProjectPath = $(if ($Workspace) { $Workspace } else { Join-Path $GokuRoot 'projects\RMCodexMCConverter' })
+    PromptFile = $request
+    Root = $GokuRoot
     PrepareOnly = $PrepareOnly
 }
 if ($CodexPath) { $arguments.CodexPath = $CodexPath }

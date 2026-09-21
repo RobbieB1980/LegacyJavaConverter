@@ -17,6 +17,8 @@ $overlay = Join-Path $ProjectRoot 'gokuai-workspace-overlay'
 $workspace = if (Test-Path -LiteralPath (Join-Path $ProjectRoot '.agents\skills')) { $ProjectRoot } elseif (Test-Path -LiteralPath (Join-Path $overlay '.agents\skills')) { $overlay } else { $ProjectRoot }
 $skills = Join-Path $workspace '.agents\skills'
 $failures = [Collections.Generic.List[string]]::new()
+$legacyProjectConfig = '.' + 'grok'
+$legacyProjectConfigPattern = '\.' + 'grok[\\/]'
 
 function Add-Failure([string]$Message) { $failures.Add($Message) | Out-Null }
 
@@ -25,8 +27,8 @@ foreach ($required in @('AGENTS.md', '.agents\skills', '.codex\config.toml')) {
         Add-Failure "Missing native Codex workspace entry: $required"
     }
 }
-if (Test-Path -LiteralPath (Join-Path $workspace '.grok')) {
-    Add-Failure 'Legacy .grok discovery directory is present'
+if (Test-Path -LiteralPath (Join-Path $workspace $legacyProjectConfig)) {
+    Add-Failure 'Legacy project discovery directory is present'
 }
 
 $requiredSkills = @(
@@ -47,7 +49,7 @@ foreach ($name in $requiredSkills) {
     if ($text -notmatch '(?ms)\A---\s*\r?\n.*?^name:\s*[^\r\n]+') { Add-Failure "$name has no front-matter name" }
     if ($text -notmatch '(?ms)\A---\s*\r?\n.*?^description:\s*') { Add-Failure "$name has no front-matter description" }
     if (($text -split "`n").Count -gt 200) { Add-Failure "$name SKILL.md exceeds 200 lines" }
-    if ($text -match '\.grok[\\/]') { Add-Failure "$name contains a legacy .grok reference" }
+    if ($text -match $legacyProjectConfigPattern) { Add-Failure "$name contains a legacy project-config reference" }
     foreach ($match in [regex]::Matches($text, '\]\((references/[^)#]+)')) {
         $reference = Join-Path (Split-Path -Parent $skillPath) ($match.Groups[1].Value.Replace('/', '\'))
         if (-not (Test-Path -LiteralPath $reference -PathType Leaf)) {

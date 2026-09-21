@@ -3862,11 +3862,6 @@ function Restore-ModAssets {
         )) {
         if (Test-Path $p) { $candidates.Add($p) | Out-Null }
     }
-    if ($ModId -eq 'the_one_who_watches') {
-        $toww = 'F:\rob_projects\Completed\GrokBuild_MF\Completed_Projects\Java\26.2\Gradle_Workspaces\TheOneWhoWatches-26.2\src\main\resources'
-        if (Test-Path $toww) { $candidates.Add($toww) | Out-Null }
-    }
-
     foreach ($resRoot in $candidates) {
         $assets = Join-Path $resRoot 'assets'
         if (-not (Test-Path $assets)) { continue }
@@ -4107,16 +4102,9 @@ function Ensure-ClientItems {
 
 function Install-WrapperFromTowwOrMdk {
     param([string]$Root)
-    # Prefer the station NeoForge 26.2 generator MDK (canonical), then legacy MDK/completed ports.
+    # Use the station NeoForge 26.2 generator MDK as the sole wrapper authority.
     $candidates = @(
-        'C:\gokuai\Data\Neoforge26.2generatortemplate',
-        'F:\rob_projects\Minecraft_AI_Workstation\knowledge\neoforge\mdks\MDK-26.2-ModDevGradle',
-        'F:\rob_projects\Completed\GrokBuild_MF\Completed_Projects\Java\26.2\Gradle_Workspaces\TheOneWhoWatches-26.2',
-        'F:\rob_projects\Completed\GrokBuild_MF\Completed_Projects\Java\26.2\Gradle_Workspaces\Friend-26.2',
-        'F:\rob_projects\Completed\GrokBuild_MF\Completed_Projects\Java\26.2\Gradle_Workspaces\The_Knocker\the_knocker-1.5.2-neoforge-1.21.8-26.2',
-        'F:\Grok Build Apps\TheOneWhoWatches-26.2',
-        'H:\GrokBuild Master Folder\Completed Projects\Java\26.2\Friend-26.2',
-        'H:\GrokBuild Master Folder\Completed Projects\Java\26.2\The Knocker\the_knocker-1.5.2-neoforge-1.21.8-26.2'
+        'C:\GokuCodexAI\Data\Neoforge26.2generatortemplate'
     )
     foreach ($ref in $candidates) {
         if ((Test-Path (Join-Path $ref 'gradlew.bat')) -and (Test-Path (Join-Path $ref 'gradle\wrapper'))) {
@@ -4462,7 +4450,7 @@ $report = @"
 Gradle is pinned to the **destination JDK** (Java 25 for NeoForge 26.2) via ``org.gradle.java.home`` in ``gradle.properties``. Do not rely on a Java-8 ``JAVA_HOME``. Prefer the helper (agents must):
 
 ``````powershell
-powershell -NoProfile -File "C:\gokuai\projects\RB-Legacy-Java-Converter\tools\Build-WithDestinationJava.ps1" -ProjectRoot "$OutputPath"
+powershell -NoProfile -File "C:\GokuCodexAI\projects\RMCodexMCConverter\Build-WithDestinationJava.ps1" -ProjectRoot "$OutputPath"
 ``````
 
 Or, after the pin is present:
