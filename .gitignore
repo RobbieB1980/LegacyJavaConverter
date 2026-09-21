@@ -22,3 +22,4 @@ _smoke-decompile/
 **/LEGACY_MIGRATION_REPORT.md
 **/build/
 **/.gradle/
+tools/lib/ast-worker/

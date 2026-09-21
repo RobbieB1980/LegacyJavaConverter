@@ -23,6 +23,7 @@
     { "sourcePath": "lib/client-items", "destinationPath": "tools/lib/client-items", "kind": "directory", "recursive": true },
     { "sourcePath": "lib/primer_changes", "destinationPath": "tools/lib/primer_changes", "kind": "directory", "recursive": true },
     { "sourcePath": "lib/dep_changes", "destinationPath": "tools/lib/dep_changes", "kind": "directory", "recursive": true },
+    { "sourcePath": null, "destinationPath": "tools/lib/ast-worker", "kind": "directory", "recursive": true },
     { "sourcePath": "docs", "destinationPath": "tools/docs", "kind": "directory", "recursive": true }
   ]
 }

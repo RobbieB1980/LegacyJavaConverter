@@ -26,6 +26,7 @@ $GuiProj = Join-Path $RepoRoot 'src\RB.LegacyJavaConverter\RB.LegacyJavaConverte
 $SetupProj = Join-Path $RepoRoot 'src\RB.LegacyJavaConverter.Setup\RB.LegacyJavaConverter.Setup.csproj'
 $ManifestPath = Join-Path $RepoRoot 'eng\portable-manifest.json'
 $ManifestValidator = Join-Path $RepoRoot 'scripts\Test-PortableManifest.ps1'
+$AstWorkerBuilder = Join-Path $RepoRoot 'tools\Build-AstWorker.ps1'
 
 function Remove-TreeLongPath([string]$Target) {
     $resolvedTarget = [IO.Path]::GetFullPath($Target)
@@ -45,6 +46,10 @@ if ($LASTEXITCODE -ne 0) { throw "Release source manifest validation failed" }
 Write-Host "==> Cleaning dist" -ForegroundColor Cyan
 if (Test-Path $Dist) { Remove-TreeLongPath $Dist }
 New-Item -ItemType Directory -Path $PortableRoot -Force | Out-Null
+
+Write-Host "==> Building JavaParser AST worker" -ForegroundColor Cyan
+& powershell -NoProfile -ExecutionPolicy Bypass -File $AstWorkerBuilder
+if ($LASTEXITCODE -ne 0) { throw "AST worker build failed" }
 
 Write-Host "==> Publishing GUI (self-contained $Runtime)" -ForegroundColor Cyan
 $guiOut = Join-Path $Dist 'publish-gui'
@@ -109,6 +114,11 @@ if (Test-Path $libSrc) {
     if ($LASTEXITCODE -gt 7) { throw "tools/lib copy failed (robocopy exit $LASTEXITCODE)" }
     Write-Host "    tools/lib (SRG map + dependency catalog)"
 }
+$astWorkerSrc = Join-Path $RepoRoot 'tools\lib\ast-worker'
+$astWorkerDest = Join-Path $toolsFinal 'lib\ast-worker'
+if (Test-Path -LiteralPath $astWorkerDest) { Remove-TreeLongPath $astWorkerDest }
+Copy-Item -LiteralPath $astWorkerSrc -Destination $astWorkerDest -Recurse -Force
+Write-Host "    tools/lib/ast-worker (JavaParser runtime)"
 
 @'
 @echo off
