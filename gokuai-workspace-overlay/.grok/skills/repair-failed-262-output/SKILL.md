@@ -8,10 +8,14 @@ description: >-
 
 # Repair failed 26.2 output
 
+Run this playbook under `legacy-java-converter-vnext`, which owns stage order,
+preservation, escalation, and the distinction between build and runtime success.
+
 ## First actions
 
 1. Read `GROK_REPAIR_PROMPT.md` (names **FAILED OUTPUT FOLDER**).
-2. Read `MIGRATION_EVIDENCE.md`, `SOURCE_PROFILE.json`, `compile-errors.log`.
+2. Read `MIGRATION_EVIDENCE.md`, `SOURCE_PROFILE.json`,
+   `conversion-manifest.json`, and `compile-errors.log`.
 3. Copy/fill an evidence packet beside the failed output:
    - Template: `references/evidence-packet-template.md`
    - Suggested path: `<FAILED OUTPUT>\EVIDENCE_PACKET.md` (keep under ~9k chars)

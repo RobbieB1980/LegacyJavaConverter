@@ -99,6 +99,14 @@ foreach ($s in @('Convert-JarToProject.ps1','Convert-OldJarToNeoForge262.ps1','C
         Write-Host "    tools/$s (from repo)"
     }
 }
+$syncSource = Join-Path $RepoRoot 'scripts\Sync-GokuaiConverterWorkspace.ps1'
+Copy-Item -LiteralPath $syncSource -Destination (Join-Path $toolsFinal 'Sync-GokuaiConverterWorkspace.ps1') -Force
+Write-Host '    tools/Sync-GokuaiConverterWorkspace.ps1 (from repo)'
+$overlaySource = Join-Path $RepoRoot 'gokuai-workspace-overlay'
+$overlayDestination = Join-Path $toolsFinal 'gokuai-workspace-overlay'
+if (Test-Path -LiteralPath $overlayDestination) { Remove-TreeLongPath $overlayDestination }
+Copy-Item -LiteralPath $overlaySource -Destination $overlayDestination -Recurse -Force
+Write-Host '    tools/gokuai-workspace-overlay (versioned repair skills)'
 if (Test-Path (Join-Path $RepoRoot 'docs')) {
     $docsDest = Join-Path $toolsFinal 'docs'
     if (Test-Path $docsDest) { Remove-Item $docsDest -Recurse -Force }

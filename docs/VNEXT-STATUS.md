@@ -20,6 +20,8 @@ The target remains 26.2. The 26.3 primer and beta line are not part of this foun
 - A JavaParser 3.28.2 worker analyzes Java with source and JAR type solvers through protocol version 1.
 - A PowerShell 5.1 bridge sends UTF-8 JSON over redirected stdin/stdout, preserves per-file parser diagnostics, and performs a read-only legacy-versus-AST inventory comparison.
 - The portable release includes the AST worker distribution and runtime dependencies.
+- A shared `legacy-java-converter-vnext` skill defines deterministic-first orchestration, preservation checks, validation gates, and bounded GokuCodexAI escalation.
+- Fix-in-Grok synchronizes and verifies the packaged skill overlay, current converter libraries, conversion-manifest support, and AST worker before opening GokuCodexAI.
 
 ## Current execution boundary
 
@@ -47,7 +49,8 @@ A successful converter solution build or portable-package build proves only that
 
 The complete gate was run on 2026-09-21 with these results:
 
-- regression suite: 142 passed;
+- regression suite: 151 passed;
+- Goku failure-handoff suite: 20 passed;
 - golden transformation suite: 3 passed;
 - conversion-manifest suite: 21 passed;
 - AST bridge suite: 15 passed;

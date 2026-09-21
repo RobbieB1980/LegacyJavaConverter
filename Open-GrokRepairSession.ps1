@@ -8,7 +8,8 @@
 param(
   [Parameter(Mandatory)][string]$FailedOutput,
   [string]$GokuRoot = 'C:\gokuai',
-  [string]$Workspace = 'C:\gokuai\projects\RB-Legacy-Java-Converter'
+  [string]$Workspace = 'C:\gokuai\projects\RB-Legacy-Java-Converter',
+  [switch]$PrepareOnly
 )
 $ErrorActionPreference = 'Stop'
 $start = Join-Path $GokuRoot 'Start-GokuAI.ps1'
@@ -16,6 +17,15 @@ $grokHome = Join-Path $GokuRoot 'grok-home'
 $grok = Join-Path $grokHome 'bin\grok.exe'
 if (-not (Test-Path $start)) { throw "Missing $start - install/update GokuAI first." }
 if (-not (Test-Path $FailedOutput)) { throw "Failed output missing: $FailedOutput" }
+
+$syncCandidates = @(
+  (Join-Path $PSScriptRoot 'Sync-GokuaiConverterWorkspace.ps1'),
+  (Join-Path $PSScriptRoot 'scripts\Sync-GokuaiConverterWorkspace.ps1')
+)
+$sync = $syncCandidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+if (-not $sync) { throw 'Versioned GokuAI workspace synchronizer is missing from the converter bundle.' }
+& $sync -Workspace $Workspace
+Write-Host 'Synchronized and verified current vNext repair skills and tools.' -ForegroundColor Cyan
 
 . (Join-Path $PSScriptRoot 'lib\ConversionCore.ps1')
 
@@ -90,5 +100,10 @@ if (Test-Path -LiteralPath $wire) {
 # Always refresh the prompt + destination JDK pin so agents never start on ambient Java 8.
 $prompt = Write-GrokRepairPrompt -FailedOutput $FailedOutput -DestinationJavaMajor 25 -TargetMinecraft '26.2'
 Write-Host "Wrote repair prompt + destination Java pin: $prompt" -ForegroundColor Cyan
+
+if ($PrepareOnly) {
+  Write-Host 'Repair workspace prepared and verified; launch skipped.' -ForegroundColor Green
+  return
+}
 
 & $start -ProjectPath $Workspace -Root $GokuRoot -PromptFile $prompt

@@ -66,7 +66,7 @@ foreach ($a in @('mc-research.md', 'mc-fast.md', 'mc-code.md', 'mc-reviewer.md')
     if (-not (Test-Path (Join-Path $agents $a))) { Add-Fail ("Missing agent definition: {0}" -f $a) }
 }
 
-foreach ($s in @('minecraft-knowledge', 'migrate-neoforge-262', 'repair-failed-262-output', 'encode-262r-remap', 'validate-destination-build')) {
+foreach ($s in @('legacy-java-converter-vnext', 'minecraft-knowledge', 'migrate-neoforge-262', 'repair-failed-262-output', 'encode-262r-remap', 'validate-destination-build')) {
     if (-not (Test-Path (Join-Path $skills ($s + '\SKILL.md')))) { Add-Fail ("Missing skill: {0}" -f $s) }
 }
 

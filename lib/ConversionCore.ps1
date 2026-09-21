@@ -1353,7 +1353,8 @@ KNOWLEDGE + MCP (mandatory):
 - Do **not** treat ``goku-data.db`` as the agent retrieval path; it is legacy/benchmark-only.
 
 SKILLS / AGENTS (use these - do not reinvent process):
-- Prefer slash/auto skill ``/repair-failed-262-output`` for this task.
+- Start with ``/legacy-java-converter-vnext`` as the end-to-end orchestrator.
+- Under that process, use ``/repair-failed-262-output`` for this failed output.
 - Fill ``$failed\EVIDENCE_PACKET.md`` from ``.grok/skills/repair-failed-262-output/references/evidence-packet-template.md`` (cap ~9k chars).
 - Validation: ``/validate-destination-build`` or ``Build-WithDestinationJava.ps1``.
 - Reusable fixes: ``/encode-262r-remap``.
@@ -1367,6 +1368,7 @@ MANDATORY ORDER - do this BEFORE inventing any fix or writing Java:
 2. Read these files in the failed output (if present):
    - $failed\MIGRATION_EVIDENCE.md
    - $failed\SOURCE_PROFILE.json
+   - $failed\conversion-manifest.json
    - $failed\compile-errors.log
 3. Create/update ``$failed\EVIDENCE_PACKET.md`` (template above).
 4. Search **262r first** via MCP (category ``262r``, version ``26.2``) / open one shard under:
@@ -1391,7 +1393,7 @@ DESTINATION JAVA / GRADLE (mandatory - do this on EVERY validation build):
 - Use the project wrapper (``gradlew.bat``) only.
 
 Do not invent a permanent client renderer compile-gate when the primer Entity Render State / submit path is unfinished.
-Start now by reading the evidence files and stating the detected source version + applicable primer ledger. Prefer skill ``/repair-failed-262-output``.
+Start now with ``/legacy-java-converter-vnext``, then ``/repair-failed-262-output``. Read the evidence files and state the detected source version + applicable primer ledger before editing.
 "@
 }
 

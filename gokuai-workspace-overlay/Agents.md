@@ -12,6 +12,7 @@ Pre-1.20.1 jars are **out of scope**. Legacy **1.20.1 → 26.1** is frozen.
 5. Success = destination-Java **`gradlew build`** producing `build/libs/*.jar` (not `compileJava` alone).
 6. Encode durable remaps into `tools/Convert-Forge1201-ToNeoForge262.ps1` **and** `C:\gokuai\Data\262r` (+ `catalog.json`).
 7. Do **not** invent a permanent client renderer compile-gate when Entity Render State work is unfinished.
+8. Use `legacy-java-converter-vnext` as orchestrator; escalate to Goku reasoning only after deterministic and known-solution stages fail.
 
 ## Destination Java
 
@@ -32,6 +33,7 @@ powershell -NoProfile -File tools\Build-WithDestinationJava.ps1 -ProjectRoot "<p
 
 | Skill | When |
 |---|---|
+| `legacy-java-converter-vnext` | End-to-end orchestration and fidelity gates |
 | `minecraft-knowledge` | API / mapping / primer / MCP lookup |
 | `migrate-neoforge-262` | Full convert / migrate to 26.2 |
 | `repair-failed-262-output` | Fix-in-Grok / failed output folder |

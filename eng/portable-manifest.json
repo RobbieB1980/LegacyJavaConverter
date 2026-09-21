@@ -11,6 +11,7 @@
     { "sourcePath": "Convert-JarToProject.ps1", "destinationPath": "tools/Convert-JarToProject.ps1", "kind": "file" },
     { "sourcePath": "Convert-OldJarToNeoForge262.ps1", "destinationPath": "tools/Convert-OldJarToNeoForge262.ps1", "kind": "file" },
     { "sourcePath": "Open-GrokRepairSession.ps1", "destinationPath": "tools/Open-GrokRepairSession.ps1", "kind": "file" },
+    { "sourcePath": "scripts/Sync-GokuaiConverterWorkspace.ps1", "destinationPath": "tools/Sync-GokuaiConverterWorkspace.ps1", "kind": "file" },
     { "sourcePath": "Build-WithDestinationJava.ps1", "destinationPath": "tools/Build-WithDestinationJava.ps1", "kind": "file" },
     { "sourcePath": "Lint-MigrationSkills.ps1", "destinationPath": "tools/Lint-MigrationSkills.ps1", "kind": "file" },
     { "sourcePath": "CHANGELOG.md", "destinationPath": "tools/CHANGELOG.md", "kind": "file" },
@@ -25,6 +26,7 @@
     { "sourcePath": "lib/primer_changes", "destinationPath": "tools/lib/primer_changes", "kind": "directory", "recursive": true },
     { "sourcePath": "lib/dep_changes", "destinationPath": "tools/lib/dep_changes", "kind": "directory", "recursive": true },
     { "sourcePath": null, "destinationPath": "tools/lib/ast-worker", "kind": "directory", "recursive": true },
+    { "sourcePath": "gokuai-workspace-overlay", "destinationPath": "tools/gokuai-workspace-overlay", "kind": "directory", "recursive": true },
     { "sourcePath": "docs", "destinationPath": "tools/docs", "kind": "directory", "recursive": true }
   ]
 }

@@ -1,4 +1,13 @@
-﻿## 2.10.13 — 2026-09-06
+﻿## 2.11.0 — 2026-09-21
+
+vNext foundation and deterministic GokuCodexAI failure handoff:
+
+- Adds the shared `legacy-java-converter-vnext` orchestration skill for NeoForge 26.2 conversion fidelity, known-solution-first repair, AST routing, and separate build/runtime validation.
+- Fix-in-Grok now synchronizes and verifies the versioned skill overlay, converter libraries, conversion manifest support, and JavaParser worker before GokuCodexAI opens.
+- Portable and installer releases ship the complete repair bundle and fail closed when required handoff components are missing.
+- Adds isolated handoff tests for stale workspace replacement, paths with spaces, skill ordering, prompt generation, and incomplete bundles.
+
+## 2.10.13 — 2026-09-06
 
 Catch-up release after GokuAI-only indexer + workspace launcher polish:
 
