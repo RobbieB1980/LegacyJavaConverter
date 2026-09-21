@@ -15,6 +15,7 @@ dist/
 lib/decompiler-cache/
 lib/dep-cache/
 _smoke-decompile/
+.worktrees/
 
 # Local conversion outputs
 **/compile*.log
