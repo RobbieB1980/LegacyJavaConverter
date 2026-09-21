@@ -33,8 +33,6 @@ if (Test-Path -LiteralPath (Join-Path $workspace $legacyProjectConfig)) {
 
 $requiredSkills = @(
     'legacy-java-converter-vnext',
-    'minecraft-knowledge',
-    'migrate-neoforge-262',
     'repair-failed-262-output',
     'encode-262r-remap',
     'validate-destination-build'
@@ -55,6 +53,11 @@ foreach ($name in $requiredSkills) {
         if (-not (Test-Path -LiteralPath $reference -PathType Leaf)) {
             Add-Failure "$name references missing file: $($match.Groups[1].Value)"
         }
+    }
+}
+foreach ($name in @('minecraft-knowledge', 'migrate-neoforge-262')) {
+    if (Test-Path -LiteralPath (Join-Path $skills $name) -PathType Container) {
+        Add-Failure "Obsolete skill remains: $name"
     }
 }
 

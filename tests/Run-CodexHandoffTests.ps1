@@ -40,6 +40,8 @@ try {
     Assert-True (Test-Path -LiteralPath (Join-Path $overlay 'AGENTS.md')) 'native root guidance'
     Assert-True (Test-Path -LiteralPath (Join-Path $overlay '.agents\skills\legacy-java-converter-vnext\SKILL.md')) 'vNext skill'
     Assert-True (Test-Path -LiteralPath (Join-Path $overlay '.agents\skills\repair-failed-262-output\SKILL.md')) 'repair skill'
+    Assert-True (-not (Test-Path -LiteralPath (Join-Path $overlay '.agents\skills\minecraft-knowledge'))) 'MCP does not ship a duplicate knowledge skill'
+    Assert-True (-not (Test-Path -LiteralPath (Join-Path $overlay '.agents\skills\migrate-neoforge-262'))) 'obsolete migration skill is pruned'
     Assert-True (Test-Path -LiteralPath (Join-Path $overlay '.codex\config.toml')) 'project MCP config'
     Assert-True (-not (Test-Path -LiteralPath (Join-Path $overlay '.grok'))) 'legacy overlay removed'
 

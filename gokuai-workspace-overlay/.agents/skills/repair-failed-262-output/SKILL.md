@@ -48,7 +48,8 @@ After the packet exists:
 4. Optional `mc-reviewer`
 5. `encode-262r-remap` when reusable
 
-See `../migrate-neoforge-262/references/spawn-packet-contract.md`.
+Use the issue packet fields in this skill and the parent vNext orchestration
+skill; no separate migration playbook is required.
 Shard id cheat-sheet (links only): `references/262r-shard-index.md`.
 
 ## Encode
