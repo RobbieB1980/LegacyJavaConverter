@@ -16,6 +16,7 @@
     { "sourcePath": "CHANGELOG.md", "destinationPath": "tools/CHANGELOG.md", "kind": "file" },
     { "sourcePath": "lib/ConversionCore.ps1", "destinationPath": "tools/lib/ConversionCore.ps1", "kind": "file" },
     { "sourcePath": "lib/Minecraft262HardenedTransforms.ps1", "destinationPath": "tools/lib/Minecraft262HardenedTransforms.ps1", "kind": "file" },
+    { "sourcePath": "lib/AstWorkerBridge.ps1", "destinationPath": "tools/lib/AstWorkerBridge.ps1", "kind": "file" },
     { "sourcePath": "lib/SolvedConversionIndex.json", "destinationPath": "tools/lib/SolvedConversionIndex.json", "kind": "file" },
     { "sourcePath": "lib/PrimerChangeIndex.json", "destinationPath": "tools/lib/PrimerChangeIndex.json", "kind": "file" },
     { "sourcePath": "lib/DependencyCatalog.json", "destinationPath": "tools/lib/DependencyCatalog.json", "kind": "file" },
