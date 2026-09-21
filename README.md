@@ -4,7 +4,11 @@
 
 Windows GUI and PowerShell migration assistant for **Forge/NeoForge 1.20.1 through 26.1** → **NeoForge 26.2** ModDevGradle projects.
 
-The converter detects the source version and API features, decompiles finished JARs, migrates known Java/resource patterns, resolves dependencies, generates the 26.2 project and optionally runs a complete Gradle build. Project-specific code can still require manual repair. The rewrite stack was proven on:
+The converter detects the source version and API features, decompiles finished JARs, migrates known Java/resource patterns, resolves dependencies, generates the 26.2 project and optionally runs a complete Gradle build. Project-specific code can still require manual repair.
+
+The vNext foundation adds a versioned conversion-manifest contract, reproducible release contents, golden transformation fixtures, and a JavaParser analysis worker. The AST worker currently runs at the analysis/shadow-comparison boundary only; production conversion still uses the proven deterministic PowerShell passes. See [docs/VNEXT-STATUS.md](docs/VNEXT-STATUS.md) for the exact boundary, validation stages, and reproducible commands.
+
+The rewrite stack was proven on:
 
 - **Friend** — compile, world creation, in-game entity spawn
 - **The Knocker** — NeoForge 1.21.8 jar → 26.2 compile + in-game spawn
@@ -84,7 +88,7 @@ The converter now auto-detects the source loader/version and inventories legacy 
 | `-OutputPath` | Empty output folder (required) |
 | `-Compile` | Run the complete `gradlew build`; success requires an installable JAR in `build/libs` |
 | `-DryRun` | Preview only — no files written |
-| `-NeoVersion` | Default `26.2.0.66` |
+| `-NeoVersion` | Default `26.2.0.72` |
 | `-GeckoLibVersion` | Default `5.5.3` |
 
 After conversion:
