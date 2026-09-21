@@ -3,7 +3,7 @@ name: validate-destination-build
 description: >-
   Run NeoForge 26.2 Gradle validation with destination JDK 25.
   Use when compiling, building, checking build/libs jars, or when ambient
-  JAVA_HOME might be Java 8. Slash: /validate-destination-build.
+  JAVA_HOME might be Java 8.
 ---
 
 # Validate with destination Java
@@ -11,7 +11,7 @@ description: >-
 ## Command
 
 ```powershell
-powershell -NoProfile -File C:\gokuai\projects\RB-Legacy-Java-Converter\tools\Build-WithDestinationJava.ps1 -ProjectRoot "<PROJECT>"
+powershell -NoProfile -File C:\GokuCodexAI\projects\RB-Legacy-Java-Converter\tools\Build-WithDestinationJava.ps1 -ProjectRoot "<PROJECT>"
 ```
 
 Optional narrower task:
@@ -28,4 +28,4 @@ Optional narrower task:
 
 ## Reference
 
-`C:\gokuai\Data\262r\converter\destination-java.md`
+`C:\GokuCodexAI\Data\262r\converter\destination-java.md`

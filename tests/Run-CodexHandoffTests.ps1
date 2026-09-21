@@ -25,6 +25,13 @@ function Assert-Equal($Actual, $Expected, [string]$Name) {
 
 $fixture = Join-Path ([IO.Path]::GetTempPath()) ('legacy codex handoff ' + [guid]::NewGuid().ToString('N'))
 try {
+    $overlay = Join-Path $repo 'gokuai-workspace-overlay'
+    Assert-True (Test-Path -LiteralPath (Join-Path $overlay 'AGENTS.md')) 'native root guidance'
+    Assert-True (Test-Path -LiteralPath (Join-Path $overlay '.agents\skills\legacy-java-converter-vnext\SKILL.md')) 'vNext skill'
+    Assert-True (Test-Path -LiteralPath (Join-Path $overlay '.agents\skills\repair-failed-262-output\SKILL.md')) 'repair skill'
+    Assert-True (Test-Path -LiteralPath (Join-Path $overlay '.codex\config.toml')) 'project MCP config'
+    Assert-True (-not (Test-Path -LiteralPath (Join-Path $overlay '.grok'))) 'legacy overlay removed'
+
     New-Item -ItemType Directory -Path $fixture -Force | Out-Null
     $body = Get-CodexRepairRequestBody -FailedOutput $fixture -DestinationJavaMajor 25 -TargetMinecraft '26.2'
     Assert-Contains $body 'Codex is the repair orchestrator' 'orchestrator authority'

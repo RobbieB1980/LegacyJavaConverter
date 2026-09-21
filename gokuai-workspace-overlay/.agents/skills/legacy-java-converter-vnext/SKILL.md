@@ -22,7 +22,7 @@ AST worker, and GokuCodexAI as ordered stages, not interchangeable guesses.
 
 ## Required order
 
-1. Read `Agents.md`, `GROK_REPAIR_PROMPT.md`, `SOURCE_PROFILE.json`,
+1. Read `AGENTS.md`, `CODEX_REPAIR_REQUEST.md`, `SOURCE_PROFILE.json`,
    `MIGRATION_EVIDENCE.md`, `conversion-manifest.json`, and
    `compile-errors.log` when present.
 2. Confirm source version, loader, framework, target, and recommended passes.
@@ -48,10 +48,10 @@ For stage ownership and stop conditions, read
 
 ## Failed outputs
 
-For a converter-created failed output, invoke `/repair-failed-262-output`
+For a converter-created failed output, use `repair-failed-262-output`
 under this skill's orchestration. Keep the failed output as the working project
-and preserve its evidence files. Use `/validate-destination-build` for every
-Gradle validation and `/encode-262r-remap` for reusable discoveries.
+and preserve its evidence files. Use `validate-destination-build` for every
+Gradle validation and `encode-262r-remap` for reusable discoveries.
 
 ## Completion report
 

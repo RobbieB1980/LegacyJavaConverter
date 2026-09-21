@@ -3,7 +3,7 @@ name: migrate-neoforge-262
 description: >-
   End-to-end migrate/convert a Forge or NeoForge mod to NeoForge 26.2.
   Use when converting jars/projects, running the Legacy Java Converter track,
-  or planning a full 1.20.1+/1.21.x → 26.2 migration. Slash: /migrate-neoforge-262.
+  or planning a full 1.20.1+/1.21.x → 26.2 migration.
 ---
 
 # Migrate → NeoForge 26.2
@@ -36,7 +36,7 @@ Parent discovers evidence. Spawn at most one worker with the packet only.
 | `mc-code` | Default multi-file implementer |
 | `mc-reviewer` | Independent check vs packet + build |
 
-Single GPU: do not run parallel local GGUFs.  
+Single GPU: do not run parallel local GGUFs.
 Open `references/spawn-packet-contract.md` before spawning.
 
 ## References
@@ -44,4 +44,4 @@ Open `references/spawn-packet-contract.md` before spawning.
 - `references/migration-order.md` — stage list (open only if needed)
 - `references/spawn-packet-contract.md` — required prompt fields
 - `../repair-failed-262-output/references/262r-shard-index.md` — shard ids (links only)
-- Knowledge paths: `.grok/rules/knowledge-sources.md`
+- Knowledge paths: `../legacy-java-converter-vnext/references/knowledge-sources.md`

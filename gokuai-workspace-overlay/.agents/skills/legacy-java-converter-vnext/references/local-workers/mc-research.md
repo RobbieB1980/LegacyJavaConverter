@@ -26,7 +26,7 @@ pointers, and optionally a partial EVIDENCE_PACKET.md.
 
 You must:
 
-1. Open **one** matching `C:\gokuai\Data\262r\shards\` (or `converter/`) file.
+1. Open **one** matching `C:\GokuCodexAI\Data\262r\shards\` (or `converter/`) file.
 2. Open **one** `primer_changes` shard only if needed.
 3. Confirm concrete APIs with MCP / exact 26.2 physical paths when claiming targets.
 4. Return a compact result (≤ ~9k chars total):
@@ -35,4 +35,4 @@ You must:
    - ≤4 short target excerpts (path + lines)
    - recommended detect→target remap row
    - suggested next agent: `mc-code` or `mc-fast`
-5. Do **not** dump full primers, walk all of `C:\gokuai\Data`, or invent APIs without citations.
+5. Do **not** dump full primers, walk all of `C:\GokuCodexAI\Data`, or invent APIs without citations.

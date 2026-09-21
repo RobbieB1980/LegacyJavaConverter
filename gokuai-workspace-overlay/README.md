@@ -1,28 +1,17 @@
-# Legacy Converter workspace overlay (tracked in GokuAI)
+# Native Codex repair workspace overlay
 
-Durable copy of Fix-in-Grok / migration skills so they are not lost if `projects/` is wiped (that tree is gitignored).
+This directory is the versioned repair environment installed into a failed
+LegacyJavaConverter output before GokuCodexAI opens.
 
-## Contents
+- `AGENTS.md` — durable Codex orchestration and validation policy.
+- `.agents/skills/` — reusable migration, repair, knowledge, validation, and
+  write-back workflows.
+- `.codex/config.toml` — project-scoped local Minecraft knowledge MCP template.
+- `tools/` — deterministic destination-Java build and skill-lint tools.
 
-- `.grok/skills/` — repair/migrate/encode/validate/minecraft-knowledge
-- `.grok/agents/` — mc-research, mc-fast, mc-code, mc-reviewer
-- `.grok/workflows/` — repair-neoforge-262
-- `.grok/rules/` — knowledge pointers
-- `Agents.md` — slim standing orders
-- `tools/` — Build-WithDestinationJava.ps1, Lint-MigrationSkills.ps1
+The overlay is native to Codex. It does not require a Grok executable,
+account, service, environment variable, or project configuration.
 
-## Sync into a workspace
-
-```powershell
-# Any workspace (skills only)
-.\scripts\Sync-LegacyConverterWorkspace.ps1 -Workspace "D:\my-mod-26.2" -SkillsOnly
-
-# Converter project (full tools when packaging repo present)
-.\scripts\Sync-LegacyConverterWorkspace.ps1 -Workspace "C:\gokuai\projects\RB-Legacy-Java-Converter"
-```
-
-`Open-GokuAIWorkspace.ps1` runs this automatically before every launch (including new workspaces).
-
-Canonical product packaging also keeps a twin under:
-`projects\_upstream\LegacyJavaConverter\gokuai-workspace-overlay\`
-(on LegacyJavaConverter GitHub).
+`legacy-java-converter-vnext` is the top-level workflow. It keeps deterministic
+conversion, known solutions, AST repair, preservation checks, Gradle build,
+and runtime correctness as ordered and separately reported stages.

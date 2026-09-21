@@ -1,7 +1,7 @@
 let meta = #{
     name: "repair-neoforge-262",
     description: "Repair a failed NeoForge 26.2 converter output using evidence packet + sequential agents",
-    when_to_use: "Fix-in-Grok failed output folders; compile-errors.log repair toward destination-Java build",
+    when_to_use: "Repair with GokuCodexAI failed output folders; compile-errors.log repair toward destination-Java build",
     phases: [
         #{ title: "Packet", detail: "Confirm failed-output evidence" },
         #{ title: "Research", detail: "One 262r/primer shard excerpts" },
@@ -57,9 +57,9 @@ if failed == () {
 phase("Packet");
 let packet_prompt = "";
 packet_prompt += "FAILED OUTPUT: " + failed + ". ";
-packet_prompt += "Read GROK_REPAIR_PROMPT.md, MIGRATION_EVIDENCE.md, SOURCE_PROFILE.json, compile-errors.log. ";
+packet_prompt += "Read CODEX_REPAIR_REQUEST.md, MIGRATION_EVIDENCE.md, SOURCE_PROFILE.json, compile-errors.log. ";
 packet_prompt += "Create or update EVIDENCE_PACKET.md using the template at ";
-packet_prompt += ".grok/skills/repair-failed-262-output/references/evidence-packet-template.md. ";
+packet_prompt += ".agents/skills/repair-failed-262-output/references/evidence-packet-template.md. ";
 packet_prompt += "Keep under 9000 characters. Return the absolute packet path and detected source_version.";
 let packet_agent = agent(packet_prompt, #{
     label: "packet",

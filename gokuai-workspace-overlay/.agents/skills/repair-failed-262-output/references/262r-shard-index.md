@@ -1,6 +1,6 @@
 # 262r shard/converter index (links only)
 
-Do **not** paste shard bodies into skills or AGENTS. Open **one** file under `C:\gokuai\Data\262r\`.
+Do **not** paste shard bodies into skills or AGENTS. Open **one** file under `C:\GokuCodexAI\Data\262r\`.
 
 ## Converter notes
 
@@ -12,7 +12,7 @@ Do **not** paste shard bodies into skills or AGENTS. Open **one** file under `C:
 | `mc-262r-soft-dep-exclude` | `converter/soft-dep-exclude.md` | Exclude soft integrations only when libs/ has no matching jar |
 | `mc-262r-soft-dep-keep-when-jar` | `converter/soft-dep-exclude.md` | Keep compat/jei when jei-26.2 jar present |
 | `mc-262r-fix-in-grok-promptfile` | `converter/fix-in-grok.md` | Start-GokuAI PromptFile single-line pointer; no multiline bat |
-| `mc-262r-fix-in-grok-path` | `converter/fix-in-grok.md` | GROK_REPAIR_PROMPT.md must name FAILED OUTPUT FOLDER |
+| `mc-262r-fix-in-grok-path` | `converter/fix-in-grok.md` | CODEX_REPAIR_REQUEST.md must name FAILED OUTPUT FOLDER |
 | `mc-262r-itemhandler-block-stub` | `converter/capability-stub.md` | Multiline ItemHandler.BLOCK registerBlockEntity stub; no orphan ); |
 | `mc-262r-destination-java` | `converter/destination-java.md` | Installer -Compile always uses destination JDK 25; org.gradle.java.home pin |
 

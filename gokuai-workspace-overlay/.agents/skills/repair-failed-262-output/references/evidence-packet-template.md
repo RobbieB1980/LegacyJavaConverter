@@ -43,7 +43,7 @@ Each: path + line range + 5–15 lines max.
 ## Validation command
 
 ```powershell
-powershell -NoProfile -File C:\gokuai\projects\RB-Legacy-Java-Converter\tools\Build-WithDestinationJava.ps1 -ProjectRoot "<FAILED OUTPUT>"
+powershell -NoProfile -File C:\GokuCodexAI\projects\RB-Legacy-Java-Converter\tools\Build-WithDestinationJava.ps1 -ProjectRoot "<FAILED OUTPUT>"
 ```
 
 ## Result (fill after attempt)
