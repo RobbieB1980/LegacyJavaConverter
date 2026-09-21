@@ -29,7 +29,7 @@ function Get-RelativeAuditPath([string]$Path) {
 function Get-ForbiddenHits([string]$Path) {
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return }
     $relative = Get-RelativeAuditPath $Path
-    if ($relative -eq 'tests\Run-CodexNativeAuditTests.ps1') { return }
+    if ($relative -in @('tests\Run-CodexNativeAuditTests.ps1', 'tests\fixtures\active-grok-reference-allowlist.txt')) { return }
     Select-String -LiteralPath $Path -Pattern $forbidden | ForEach-Object {
         '{0}:{1}:{2}' -f $relative, $_.LineNumber, $_.Line.Trim()
     }
