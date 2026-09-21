@@ -113,6 +113,9 @@ if (Test-Path (Join-Path $RepoRoot 'docs')) {
     $docsDest = Join-Path $toolsFinal 'docs'
     if (Test-Path $docsDest) { Remove-Item $docsDest -Recurse -Force }
     Copy-Item (Join-Path $RepoRoot 'docs') $docsDest -Recurse -Force
+    # Design/plan ledgers are repository provenance, not runtime repair context.
+    $superpowersDest = Join-Path $docsDest 'superpowers'
+    if (Test-Path -LiteralPath $superpowersDest) { Remove-Item -LiteralPath $superpowersDest -Recurse -Force }
 }
 $libSrc = Join-Path $RepoRoot 'lib'
 if (Test-Path $libSrc) {
