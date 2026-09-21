@@ -1318,86 +1318,81 @@ function Invoke-GradleBuildWithRequiredJava {
     }
 }
 
-function Get-GrokRepairPromptBody {
+function Get-CodexRepairRequestBody {
     <#
     .SYNOPSIS
-      Canonical Fix-in-Grok / agent repair prompt. Forces destination JDK+Gradle
-      for validation — never ambient/source Java first. Requires minecraft-knowledge MCP.
+      Canonical Codex-native request for repairing a failed conversion output.
     #>
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)][string]$FailedOutput,
         [int]$DestinationJavaMajor = 25,
         [string]$TargetMinecraft = '26.2'
     )
     $failed = $FailedOutput.TrimEnd('\', '/')
-    $toolsLib = $PSScriptRoot
     return @"
-You are repairing a failed RB Legacy Java Converter -> NeoForge $TargetMinecraft run.
+# LegacyJavaConverter vNext repair request
+
+Codex is the repair orchestrator for this failed LegacyJavaConverter -> NeoForge $TargetMinecraft run.
+KAT and Qwen are optional bounded local workers. Codex reviews and verifies every worker result.
 
 FAILED OUTPUT FOLDER:
 $failed
 
-KNOWLEDGE + MCP (mandatory):
-- Workspace: ``C:\gokuai\projects\RB-Legacy-Java-Converter``
-- Knowledge corpus: ``C:\gokuai\Data``
-- Canonical index: ``C:\gokuai\DataIndex\minecraft-knowledge`` (via ``_ACTIVE_DB.txt``)
-- MCP server: **minecraft-knowledge** (project ``.grok/config.toml``)
-- At session start read ``.grok/rules/knowledge-sources.md`` and ``.grok/rules/session-knowledge-context.md``.
-- Once per session call ``minecraft-knowledge__knowledge_status`` (and ``list_knowledge_sources`` if readiness is uncertain).
-- Prefer MCP tools over walking ``C:\gokuai\Data``:
-  - ``minecraft-knowledge__search_knowledge`` / ``search_solved_projects`` (category ``262r``, version ``26.2`` first)
-  - ``minecraft-knowledge__build_migration_evidence(source_version, "$TargetMinecraft", query)``
-  - ``minecraft-knowledge__resolve_primer_chain(source_version, "$TargetMinecraft")``
-  - ``minecraft-knowledge__grep_physical_source`` / ``read_physical_source`` for exact-target API proof
-  - ``minecraft-knowledge__resolve_mapping`` with explicit namespaces
-- Do **not** treat ``goku-data.db`` as the agent retrieval path; it is legacy/benchmark-only.
+NATIVE CODEX WORKSPACE:
+- Read ``AGENTS.md`` before editing.
+- Invoke ``legacy-java-converter-vnext`` from ``.agents/skills``.
+- Use ``repair-failed-262-output`` for this failed output and ``validate-destination-build`` for builds.
+- Use the local ``minecraft-knowledge`` MCP declared in ``.codex/config.toml``.
+- The active AI and knowledge root is ``C:\GokuCodexAI``.
 
-SKILLS / AGENTS (use these - do not reinvent process):
-- Start with ``/legacy-java-converter-vnext`` as the end-to-end orchestrator.
-- Under that process, use ``/repair-failed-262-output`` for this failed output.
-- Fill ``$failed\EVIDENCE_PACKET.md`` from ``.grok/skills/repair-failed-262-output/references/evidence-packet-template.md`` (cap ~9k chars).
-- Validation: ``/validate-destination-build`` or ``Build-WithDestinationJava.ps1``.
-- Reusable fixes: ``/encode-262r-remap``.
-- Optional orchestration: workflow ``/repair-neoforge-262`` with args.failed_output.
-- Subagents when delegating: ``mc-research`` -> ``mc-fast``/``mc-code`` -> ``mc-reviewer`` (one at a time; packet required).
-- Standing orders: project ``Agents.md`` (keep thin). Do **not** install unrelated process plugins for this repair.
+MANDATORY ORDER — deterministic and known-solution stages precede fresh reasoning:
+1. Read ``SOURCE_PROFILE.json``, ``MIGRATION_EVIDENCE.md``, ``conversion-manifest.json``, and ``compile-errors.log`` when present.
+2. Confirm the source Minecraft version, loader/framework, mappings, dependencies, target, and recommended passes.
+3. Complete deterministic conversion stages and consult the persistent Solutions Index, 262r, solved cases, and matching NeoForge 26.2 primer ledger.
+4. Confirm uncertain APIs against exact $TargetMinecraft physical sources and explicit mapping namespaces.
+5. Use the JavaParser AST worker for structural Java edits; use lexical transforms only for proven idempotent replacements.
+6. Audit assets, models, items, entities, AI, and behaviour against the source inventory.
+7. Build with the destination JDK, then report launch, registry/data, content, and runtime behaviour separately.
+8. Delegate only one bounded, evidence-backed issue at a time to an optional local worker, then review its result.
+9. Encode every durable repair into converter logic or an AST recipe, the Solutions Index/262r, and a regression fixture.
 
-MANDATORY ORDER - do this BEFORE inventing any fix or writing Java:
-1. Read project AGENTS.md and the newest SESSION-CONTINUE-*.md under:
-   C:\gokuai\Data\Solved_Problems\legacy-java-converter-26.2
-2. Read these files in the failed output (if present):
-   - $failed\MIGRATION_EVIDENCE.md
-   - $failed\SOURCE_PROFILE.json
-   - $failed\conversion-manifest.json
-   - $failed\compile-errors.log
-3. Create/update ``$failed\EVIDENCE_PACKET.md`` (template above).
-4. Search **262r first** via MCP (category ``262r``, version ``26.2``) / open one shard under:
-   C:\gokuai\Data\262r\shards
-   then converter notes under ``C:\gokuai\Data\262r\converter``.
-5. From SOURCE_PROFILE / MIGRATION_EVIDENCE, open ONLY the matching primer_changes ledger under:
-   C:\gokuai\Data\NeoForge_Primers\26.2
-   (primer_changes_<source>-to-26.2.md + one shard at a time). Prefer ``build_migration_evidence``. Do NOT dump every full primer.
-6. Search solved cases (CASE-003/004/005, LEARNINGS, DFU/OVY/INT/PKG) via ``search_solved_projects`` or in:
-   C:\gokuai\Data\Solved_Problems\legacy-java-converter-26.2
-7. Confirm APIs against exact NeoForge/Minecraft $TargetMinecraft physical sources (MCP grep/read), then fix.
-8. Prefer encoding durable remaps into tools/Convert-Forge1201-ToNeoForge262.ps1 / SolvedConversionIndex / ``262r`` over one-off patches.
-9. Success = destination-Java ``gradlew build`` producing build/libs/*.jar (not compileJava alone).
+EVIDENCE PACKET:
+- Create or refresh ``$failed\EVIDENCE_PACKET.md`` from ``.agents/skills/repair-failed-262-output/references/evidence-packet-template.md``.
+- Keep excerpts bounded and point to exact evidence paths instead of copying complete logs.
+- Record the deterministic passes and Solutions Index entries already tried.
+- Keep the target pinned to NeoForge $TargetMinecraft; do not retarget this conversion to 26.3.
 
-DESTINATION JAVA / GRADLE (mandatory - do this on EVERY validation build):
-- NeoForge $TargetMinecraft destination JDK major is **$DestinationJavaMajor**. Never probe with ambient/source ``JAVA_HOME`` (often Java 8) first.
-- Before the first ``gradlew`` in this session, pin destination Java:
-  ``powershell -NoProfile -File C:\gokuai\projects\RB-Legacy-Java-Converter\tools\Build-WithDestinationJava.ps1 -ProjectRoot "$failed"``
-  or ``/validate-destination-build``.
-- Ensure ``org.gradle.java.home`` in the failed output ``gradle.properties`` points at JDK $DestinationJavaMajor+.
-- Do **not** treat ``Gradle requires JVM 17+ ... configured to use JVM 8`` as a project compile error - wrong JDK; re-run with destination Java immediately.
-- Use the project wrapper (``gradlew.bat``) only.
+KNOWLEDGE ORDER:
+1. Solutions Index and ``C:\GokuCodexAI\Data\262r``.
+2. Solved LegacyJavaConverter 26.2 cases.
+3. Matching source-to-26.2 primer ledger and dependency delta.
+4. Exact NeoForge/Minecraft $TargetMinecraft physical sources and mappings.
+5. Fresh reasoning only for evidence-backed gaps.
 
-Do not invent a permanent client renderer compile-gate when the primer Entity Render State / submit path is unfinished.
-Start now with ``/legacy-java-converter-vnext``, then ``/repair-failed-262-output``. Read the evidence files and state the detected source version + applicable primer ledger before editing.
+DESTINATION JAVA / GRADLE:
+- Destination JDK major: $DestinationJavaMajor.
+- Before the first Gradle command, run:
+  ``powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\Build-WithDestinationJava.ps1 -ProjectRoot "$failed"``
+- Use the project Gradle wrapper and produce ``build/libs/*.jar``; ``compileJava`` alone is not success.
+- Treat an ambient-Java mismatch as an environment error, not a mod source error.
+
+COMPLETION REPORT:
+- deterministic conversion stages completed;
+- known-solution and AST changes applied;
+- preservation status for assets/data/models/items/entities/AI/behaviour;
+- clean Gradle build and produced jar;
+- runtime launch, registry/data loading, content, and behavioural validation status;
+- remaining manual work;
+- reusable fixes written back to tests and the Solutions Index.
+
+Never describe a clean build alone as a successful conversion.
+Start with the ``legacy-java-converter-vnext`` skill and state the detected source identity and matching 26.2 evidence before editing.
 "@
 }
 
-function Write-GrokRepairPrompt {
+function Write-CodexRepairRequest {
+    [CmdletBinding()]
     param(
         [Parameter(Mandatory)][string]$FailedOutput,
         [int]$DestinationJavaMajor = 25,
@@ -1407,9 +1402,30 @@ function Write-GrokRepairPrompt {
         throw "Failed output missing: $FailedOutput"
     }
     $null = Set-ProjectDestinationJavaHome -ProjectRoot $FailedOutput -FallbackJavaMajor $DestinationJavaMajor -RequiredMajor $DestinationJavaMajor
-    $body = Get-GrokRepairPromptBody -FailedOutput $FailedOutput -DestinationJavaMajor $DestinationJavaMajor -TargetMinecraft $TargetMinecraft
-    $path = Join-Path $FailedOutput 'GROK_REPAIR_PROMPT.md'
-    $utf8 = New-Object System.Text.UTF8Encoding $false
-    [IO.File]::WriteAllText($path, $body.TrimEnd() + "`r`n", $utf8)
+    $body = Get-CodexRepairRequestBody -FailedOutput $FailedOutput -DestinationJavaMajor $DestinationJavaMajor -TargetMinecraft $TargetMinecraft
+    $path = Join-Path $FailedOutput 'CODEX_REPAIR_REQUEST.md'
+    [IO.File]::WriteAllText($path, $body.TrimEnd() + "`r`n", [Text.UTF8Encoding]::new($false))
     return $path
+}
+
+function Get-GrokRepairPromptBody {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$FailedOutput,
+        [int]$DestinationJavaMajor = 25,
+        [string]$TargetMinecraft = '26.2'
+    )
+    Write-Warning 'Get-GrokRepairPromptBody is deprecated; using Get-CodexRepairRequestBody.'
+    return Get-CodexRepairRequestBody @PSBoundParameters
+}
+
+function Write-GrokRepairPrompt {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$FailedOutput,
+        [int]$DestinationJavaMajor = 25,
+        [string]$TargetMinecraft = '26.2'
+    )
+    Write-Warning 'Write-GrokRepairPrompt is deprecated; using Write-CodexRepairRequest.'
+    return Write-CodexRepairRequest @PSBoundParameters
 }
