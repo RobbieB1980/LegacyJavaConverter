@@ -4132,6 +4132,7 @@ function Install-WrapperFromTowwOrMdk {
 }
 
 # -------------------- main --------------------
+function Invoke-LegacyConversionMain {
 $Source = (Resolve-Path -LiteralPath $Path).Path
 if (-not (Test-Path (Join-Path $Source 'src'))) { throw "No src/ under $Source" }
 $sourceProfile = Get-SourceProfile -Root $Source -VersionOverride $SourceVersion
@@ -4526,3 +4527,8 @@ if ($Compile -and $compileExit -ne 0) {
 }
 # Always exit 0 after successful scaffold so GUI does not report hard failure for diagnostic compile
 exit 0
+}
+
+if ($env:LEGACY_CONVERTER_LOAD_ONLY -ne '1') {
+    Invoke-LegacyConversionMain
+}
