@@ -1,0 +1,2 @@
+# One glob-style pattern per line. Keep this empty unless an active compatibility
+# file must contain a forbidden legacy runtime term for a documented reason.
