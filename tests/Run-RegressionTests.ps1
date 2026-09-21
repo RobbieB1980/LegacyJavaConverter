@@ -159,11 +159,14 @@ finally {
     if (Test-Path -LiteralPath $manifestFixture) { Remove-Item -LiteralPath $manifestFixture -Recurse -Force }
 }
 
-foreach ($file in Get-ChildItem -LiteralPath $repo -Recurse -Filter '*.ps1' -File) {
+$powerShellSources = @(& git -C $repo ls-files --cached --others --exclude-standard -- '*.ps1')
+if ($LASTEXITCODE -ne 0) { throw 'Could not enumerate repository PowerShell sources with git ls-files' }
+foreach ($relativePath in $powerShellSources) {
+    $file = Get-Item -LiteralPath (Join-Path $repo ($relativePath -replace '/', '\'))
     $tokens = $null
     $errors = $null
     [Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$errors) | Out-Null
-    Assert-Equal @($errors).Count 0 "PowerShell parse $($file.Name)"
+    Assert-Equal @($errors).Count 0 "PowerShell parse $relativePath"
 }
 
 foreach ($file in @('Convert-Forge1201-ToNeoForge262.ps1','Convert-JarToProject.ps1','Convert-OldJarToNeoForge262.ps1','lib\ModDependencyPipeline.ps1')) {
