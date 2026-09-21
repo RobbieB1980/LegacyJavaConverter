@@ -21,7 +21,7 @@ The target remains 26.2. The 26.3 primer and beta line are not part of this foun
 - A PowerShell 5.1 bridge sends UTF-8 JSON over redirected stdin/stdout, preserves per-file parser diagnostics, and performs a read-only legacy-versus-AST inventory comparison.
 - The portable release includes the AST worker distribution and runtime dependencies.
 - A shared `legacy-java-converter-vnext` skill defines deterministic-first orchestration, preservation checks, validation gates, and bounded GokuCodexAI escalation.
-- Fix-in-Grok synchronizes and verifies the packaged skill overlay, current converter libraries, conversion-manifest support, and AST worker before opening GokuCodexAI.
+- Repair with GokuCodexAI synchronizes and verifies native `AGENTS.md`, `.agents/skills`, `.codex/config.toml`, current converter libraries, conversion-manifest support, and the AST worker before opening Codex as orchestrator.
 
 ## Current execution boundary
 
@@ -67,7 +67,9 @@ Run from the repository root in Windows PowerShell:
 powershell -NoProfile -ExecutionPolicy Bypass -File tests\Run-RegressionTests.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File tests\Run-TransformationTests.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File tests\Run-ManifestTests.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File tests\Run-CodexHandoffTests.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File tests\Run-AstBridgeTests.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File tests\Run-CodexNativeAuditTests.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File tools\Build-AstWorker.ps1
 dotnet build RB.LegacyJavaConverter.slnx -c Release
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Build-Release.ps1 -SkipWorkspaceSync
@@ -79,7 +81,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts\Test-PortableManifes
 
 `Build-AstWorker.ps1` selects destination JDK 25 and uses the checked-in Gradle 9.2.1 wrapper, so verification does not depend on the machine's ambient Java 8 installation or a global Gradle command.
 
-`-SkipWorkspaceSync` keeps a verification build inside this repository. Omit it only when the completed release should also refresh the separate live GokuAI converter workspace.
+Release builds package and validate the native overlay without modifying the live GokuCodexAI workspace. Failed-output preparation performs the synchronized installation when repair is requested.
 
 ## Next implementation stages
 

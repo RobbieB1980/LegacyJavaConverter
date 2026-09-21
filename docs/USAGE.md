@@ -19,6 +19,18 @@
 # Failure preserves the scaffold and writes compile-errors.log and COMPILE_REPORT.md.
 ```
 
+If the conversion cannot complete, click **Repair with GokuCodexAI** in the
+GUI or run:
+
+```powershell
+.\Open-CodexRepairSession.ps1 -FailedOutput "C:\mods\mymod-26.2"
+```
+
+The launcher writes `CODEX_REPAIR_REQUEST.md`, installs native Codex guidance
+and skills into the failed output, configures the local Minecraft knowledge
+MCP from `C:\GokuCodexAI`, and opens Codex as the repair orchestrator. The
+NeoForge target remains 26.2. Local KAT/Qwen workers are optional.
+
 ## Finished NeoForge 1.21.x jar → 26.2 scaffold
 
 ```powershell

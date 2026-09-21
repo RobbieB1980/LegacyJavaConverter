@@ -3,3 +3,4 @@
 tests\Run-CodexHandoffTests.ps1:*:Assert-NotContains*GROK_HOME*
 tests\Run-CodexHandoffTests.ps1:*:Assert-True*GROK_HOME*
 tests\Run-CodexHandoffTests.ps1:*:Assert-NotContains*grok.exe*
+scripts\Build-Release.ps1:*:*.Name -ieq 'grok.exe'*

@@ -77,19 +77,22 @@ Converts **Forge/NeoForge 1.20.1Ã¢â‚¬â€œ26.1** (and decompiled jars) �
 - vNext foundation with reproducible release contents and staged validation contracts
 - JavaParser analysis worker and PowerShell bridge in shadow mode
 - Hardened NeoForge 26.2 transforms, golden fixtures, and conversion-manifest schema
+- Repair with GokuCodexAI opens native Codex with the versioned vNext skill,
+  local knowledge MCP, bounded evidence, and optional KAT/Qwen workers
 
 ### Requirements
 
 - Windows x64
 - PowerShell 5.1+
 - JDK 25 for compile/build of converted projects (destination Java)
-- Fix-in-Grok: GokuAI at ``C:\gokuai`` with converter workspace skills
+- GokuCodexAI at ``C:\GokuCodexAI`` and an authenticated Codex installation for assisted repair
 
 ### Notes
 
 - Original input is never modified (always writes to output folder).
 - Setup installs under ``%LOCALAPPDATA%\RB-Legacy-Java-Converter`` by default (no admin required).
 - Detect source version -> primer path -> solved overlays/passes -> destination-Java ``gradlew build`` for installable jars.
+- Build success and runtime/content/behaviour validation are reported separately.
 - Prefer official 26.2 mod jars when published; converter path is for when they are absent.
 "@
 

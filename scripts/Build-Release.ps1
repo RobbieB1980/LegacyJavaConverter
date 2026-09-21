@@ -92,21 +92,23 @@ else {
 # Always overwrite tools scripts from repo root (publish output can ship stale copies)
 $toolsFinal = Join-Path $PortableRoot 'tools'
 if (-not (Test-Path $toolsFinal)) { New-Item -ItemType Directory -Path $toolsFinal -Force | Out-Null }
-foreach ($s in @('Convert-JarToProject.ps1','Convert-OldJarToNeoForge262.ps1','Convert-Forge1201-ToNeoForge262.ps1','Open-GrokRepairSession.ps1','Build-WithDestinationJava.ps1','Lint-MigrationSkills.ps1','README.md','LICENSE','CHANGELOG.md')) {
+foreach ($s in @('Convert-JarToProject.ps1','Convert-OldJarToNeoForge262.ps1','Convert-Forge1201-ToNeoForge262.ps1','Open-CodexRepairSession.ps1','Open-GrokRepairSession.ps1','Build-WithDestinationJava.ps1','Lint-MigrationSkills.ps1','README.md','LICENSE','CHANGELOG.md')) {
     $src = Join-Path $RepoRoot $s
     if (Test-Path $src) {
         Copy-Item $src $toolsFinal -Force
         Write-Host "    tools/$s (from repo)"
     }
 }
-$syncSource = Join-Path $RepoRoot 'scripts\Sync-GokuaiConverterWorkspace.ps1'
-Copy-Item -LiteralPath $syncSource -Destination (Join-Path $toolsFinal 'Sync-GokuaiConverterWorkspace.ps1') -Force
-Write-Host '    tools/Sync-GokuaiConverterWorkspace.ps1 (from repo)'
+foreach ($syncName in @('Sync-CodexConverterWorkspace.ps1', 'Sync-GokuaiConverterWorkspace.ps1')) {
+    $syncSource = Join-Path $RepoRoot "scripts\$syncName"
+    Copy-Item -LiteralPath $syncSource -Destination (Join-Path $toolsFinal $syncName) -Force
+    Write-Host "    tools/$syncName (from repo)"
+}
 $overlaySource = Join-Path $RepoRoot 'gokuai-workspace-overlay'
 $overlayDestination = Join-Path $toolsFinal 'gokuai-workspace-overlay'
 if (Test-Path -LiteralPath $overlayDestination) { Remove-TreeLongPath $overlayDestination }
 Copy-Item -LiteralPath $overlaySource -Destination $overlayDestination -Recurse -Force
-Write-Host '    tools/gokuai-workspace-overlay (versioned repair skills)'
+Write-Host '    tools/gokuai-workspace-overlay (native Codex repair skills/config)'
 if (Test-Path (Join-Path $RepoRoot 'docs')) {
     $docsDest = Join-Path $toolsFinal 'docs'
     if (Test-Path $docsDest) { Remove-Item $docsDest -Recurse -Force }
@@ -128,6 +130,21 @@ $astWorkerDest = Join-Path $toolsFinal 'lib\ast-worker'
 if (Test-Path -LiteralPath $astWorkerDest) { Remove-TreeLongPath $astWorkerDest }
 Copy-Item -LiteralPath $astWorkerSrc -Destination $astWorkerDest -Recurse -Force
 Write-Host "    tools/lib/ast-worker (JavaParser runtime)"
+
+$nativeRequired = @(
+    'Open-CodexRepairSession.ps1',
+    'Sync-CodexConverterWorkspace.ps1',
+    'gokuai-workspace-overlay\AGENTS.md',
+    'gokuai-workspace-overlay\.codex\config.toml',
+    'gokuai-workspace-overlay\.agents\skills\legacy-java-converter-vnext\SKILL.md'
+)
+foreach ($relative in $nativeRequired) {
+    $path = Join-Path $toolsFinal $relative
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Portable native repair component missing: $relative" }
+}
+if (Get-ChildItem -LiteralPath $PortableRoot -Recurse -File | Where-Object { $_.Name -ieq 'grok.exe' } | Select-Object -First 1) {
+    throw 'Portable payload unexpectedly contains a Grok executable.'
+}
 
 @'
 @echo off
@@ -199,9 +216,8 @@ Write-Host "  Setup EXE       : $(Join-Path $Dist 'RB-Legacy-Java-Converter-Setu
 Write-Host ""
 Get-ChildItem $Dist -File | Format-Table Name, @{N='MB';E={[math]::Round($_.Length/1MB,2)}}, LastWriteTime
 
-# Keep Fix-in-Grok workspace skills/agents in sync on this machine
-$sync = Join-Path $PSScriptRoot 'Sync-GokuaiConverterWorkspace.ps1'
-if (-not $SkipWorkspaceSync -and (Test-Path -LiteralPath $sync)) {
-    Write-Host "==> Syncing GokuAI Fix-in-Grok workspace overlay" -ForegroundColor Cyan
-    & powershell -NoProfile -ExecutionPolicy Bypass -File $sync -RepoRoot $RepoRoot
+# Release builds validate and package the native overlay but do not mutate the
+# live GokuCodexAI workspace. Failed-output preparation performs synchronization.
+if (-not $SkipWorkspaceSync) {
+    Write-Host 'Native GokuCodexAI overlay packaged; live synchronization occurs at repair launch.' -ForegroundColor Cyan
 }

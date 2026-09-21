@@ -140,13 +140,23 @@ $portableManifest = Get-Content -LiteralPath $portableManifestPath -Raw | Conver
 $manifestSources = @($portableManifest.entries | ForEach-Object { $_.sourcePath })
 foreach ($requiredSource in @(
     'Convert-Forge1201-ToNeoForge262.ps1', 'Convert-JarToProject.ps1', 'Convert-OldJarToNeoForge262.ps1',
-    'Open-GrokRepairSession.ps1', 'Build-WithDestinationJava.ps1', 'Lint-MigrationSkills.ps1',
-    'scripts/Sync-GokuaiConverterWorkspace.ps1', 'gokuai-workspace-overlay',
+    'Open-CodexRepairSession.ps1', 'Open-GrokRepairSession.ps1', 'Build-WithDestinationJava.ps1', 'Lint-MigrationSkills.ps1',
+    'scripts/Sync-CodexConverterWorkspace.ps1', 'scripts/Sync-GokuaiConverterWorkspace.ps1', 'gokuai-workspace-overlay',
     'lib/SolvedConversionIndex.json', 'lib/PrimerChangeIndex.json', 'lib/DependencyCatalog.json',
     'lib/overlays', 'lib/client-items', 'lib/primer_changes', 'lib/dep_changes', 'docs'
 )) {
     Assert-True ($manifestSources -contains $requiredSource) "portable manifest source $requiredSource"
 }
+$appProjectText = Get-Content -LiteralPath (Join-Path $repo 'src\RB.LegacyJavaConverter\RB.LegacyJavaConverter.csproj') -Raw
+Assert-True ($appProjectText -match 'Open-CodexRepairSession\.ps1') 'application packages native Codex launcher'
+Assert-True ($appProjectText -match 'Sync-CodexConverterWorkspace\.ps1') 'application packages native workspace sync'
+$releaseBuildText = Get-Content -LiteralPath (Join-Path $repo 'scripts\Build-Release.ps1') -Raw
+Assert-True ($releaseBuildText -match 'Open-CodexRepairSession\.ps1') 'release build copies native Codex launcher'
+Assert-True ($releaseBuildText -match 'Sync-CodexConverterWorkspace\.ps1') 'release build copies native workspace sync'
+Assert-True ($releaseBuildText -notmatch 'Fix-in-Grok|C:\\gokuai') 'release build has no active legacy repair instructions'
+$releasePublishText = Get-Content -LiteralPath (Join-Path $repo 'scripts\Publish-GitHubRelease.ps1') -Raw
+Assert-True ($releasePublishText -match 'Repair with GokuCodexAI') 'release notes describe native repair action'
+Assert-True ($releasePublishText -notmatch 'Fix-in-Grok|C:\\gokuai') 'release notes have no active legacy repair requirement'
 
 $manifestFixture = Join-Path ([IO.Path]::GetTempPath()) ('legacy-portable-manifest-test-' + [guid]::NewGuid().ToString('N'))
 try {

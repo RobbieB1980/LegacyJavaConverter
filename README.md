@@ -47,6 +47,15 @@ Outputs land in `dist\`. See [CHANGELOG.md](CHANGELOG.md) for version history.
 4. Choose **Input** and empty **Output** folder.
 5. Optionally enable **Compile after convert** to run the full Gradle build and produce the versioned JAR (needs JDK 25; jar mode also needs Java 17+ for Vineflower).
 6. Click **Convert** / **Jar → 26.2**. Original input is never modified.
+7. If deterministic conversion cannot finish, choose **Repair with GokuCodexAI**. Codex opens in the failed output with the vNext skill, Solutions Index, exact 26.2 knowledge, conversion evidence, and destination-Java tools already configured.
+
+The repair path uses `C:\GokuCodexAI` and native Codex configuration. It has no
+runtime dependency on Grok software, accounts, services, or authentication.
+KAT/Qwen may be used as optional local workers, while Codex remains responsible
+for orchestration, integration, and verification.
+
+A clean Gradle build and an installable jar are reported separately from game
+launch, registry/data loading, content, and behavioural validation.
 
 See [docs/JAR-PIPELINE.md](docs/JAR-PIPELINE.md) for the jar workflow.
 

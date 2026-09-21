@@ -3,7 +3,7 @@
   Run Gradle for a NeoForge 26.2 converted project using the destination JDK (Java 25).
 
 .DESCRIPTION
-  Agents and Fix-in-Grok repairs must use this instead of bare ``gradlew`` under ambient
+  Agents and GokuCodexAI repairs must use this instead of bare ``gradlew`` under ambient
   JAVA_HOME (often Java 8). Pins org.gradle.java.home, sets JAVA_HOME, then runs the wrapper.
 
 .EXAMPLE
