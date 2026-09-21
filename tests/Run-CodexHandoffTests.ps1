@@ -106,6 +106,37 @@ try {
     }
     Assert-True ($failureExitCode -ne 0) 'incomplete native overlay fails closed'
     Assert-Contains $failureOutput '.agents\skills\legacy-java-converter-vnext\SKILL.md' 'missing native file identified'
+
+    $failedOutput = Join-Path $fixture "Mod's Failed Output 26.2"
+    New-Item -ItemType Directory -Path $failedOutput -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $failedOutput 'SOURCE_PROFILE.json') -Value '{"minecraftVersion":"1.21.4"}' -Encoding UTF8
+    Set-Content -LiteralPath (Join-Path $failedOutput 'conversion-manifest.json') -Value '{"target":"26.2"}' -Encoding UTF8
+    Set-Content -LiteralPath (Join-Path $failedOutput 'MIGRATION_EVIDENCE.md') -Value '# Evidence' -Encoding UTF8
+    Set-Content -LiteralPath (Join-Path $failedOutput 'compile-errors.log') -Value 'fixture error' -Encoding UTF8
+    $fakeCodex = Join-Path $fixture 'fake codex.exe'
+    Set-Content -LiteralPath $fakeCodex -Value 'fixture' -Encoding ASCII
+    $launcher = Join-Path $repo 'Open-CodexRepairSession.ps1'
+    $launchOutput = (& powershell -NoProfile -ExecutionPolicy Bypass -File $launcher -FailedOutput $failedOutput -GokuRoot $gokuRoot -CodexPath $fakeCodex -PrepareOnly | Out-String)
+    Assert-True ($LASTEXITCODE -eq 0) 'native launcher prepare-only succeeds'
+    $launchJson = @($launchOutput -split '\r?\n' | Where-Object { $_.TrimStart().StartsWith('{') } | Select-Object -Last 1)[0] | ConvertFrom-Json
+    Assert-True ([bool]$launchJson.Ready) 'native launcher reports ready'
+    Assert-Equal $launchJson.CodexPath $fakeCodex 'explicit Codex path used'
+    $workingIndex = [Array]::IndexOf([object[]]$launchJson.Arguments, '-C')
+    Assert-True ($workingIndex -ge 0) 'Codex working-directory argument present'
+    Assert-Equal $launchJson.Arguments[$workingIndex + 1] $failedOutput 'failed output path remains one argument'
+    Assert-True (Test-Path -LiteralPath (Join-Path $failedOutput 'CODEX_REPAIR_REQUEST.md')) 'launcher writes native request'
+    Assert-True (-not (($launchJson.Arguments -join ' ') -match 'grok-home|GROK_HOME|grok mcp')) 'launcher arguments contain no Grok runtime dependency'
+
+    $mainForm = Get-Content -LiteralPath (Join-Path $repo 'src\RB.LegacyJavaConverter\MainForm.cs') -Raw
+    Assert-Contains $mainForm 'Repair with GokuCodexAI' 'GUI uses native repair label'
+    Assert-Contains $mainForm 'LaunchCodexRepairSession' 'GUI uses native repair method'
+    Assert-NotContains $mainForm '"Fix in Grok"' 'GUI removes legacy repair label'
+    $converterScript = Get-Content -LiteralPath (Join-Path $repo 'Convert-Forge1201-ToNeoForge262.ps1') -Raw
+    Assert-Contains $converterScript 'Write-CodexRepairRequest' 'compile failure writes native request'
+    $compatLauncher = Get-Content -LiteralPath (Join-Path $repo 'Open-GrokRepairSession.ps1') -Raw
+    Assert-Contains $compatLauncher 'Open-CodexRepairSession.ps1' 'legacy launcher forwards to native launcher'
+    Assert-NotContains $compatLauncher 'grok.exe' 'legacy launcher contains no Grok executable dependency'
+    Assert-NotContains $compatLauncher 'GROK_HOME' 'legacy launcher contains no Grok environment dependency'
 }
 finally {
     if (Test-Path -LiteralPath $fixture) { Remove-Item -LiteralPath $fixture -Recurse -Force }

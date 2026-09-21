@@ -4494,10 +4494,10 @@ if ($Compile) {
             Write-Warn2 "Gradle build failed (exit $compileExit). Scaffold is still written."
             Write-Warn2 "See compile-errors.log in the output folder for details."
             try {
-                $repairPrompt = Write-GrokRepairPrompt -FailedOutput $OutputPath -DestinationJavaMajor 25 -TargetMinecraft $MinecraftVersion
-                Write-Ok "Wrote Fix-in-Grok prompt (destination Java pin): $repairPrompt"
+                $repairRequest = Write-CodexRepairRequest -FailedOutput $OutputPath -DestinationJavaMajor 25 -TargetMinecraft $MinecraftVersion
+                Write-Ok "Wrote GokuCodexAI repair request (destination Java pin): $repairRequest"
             } catch {
-                Write-Warn2 "Could not write GROK_REPAIR_PROMPT.md: $($_.Exception.Message)"
+                Write-Warn2 "Could not write CODEX_REPAIR_REQUEST.md: $($_.Exception.Message)"
             }
             if (Test-Path -LiteralPath $gradleRun.LogPath) {
                 Get-Content -LiteralPath $gradleRun.LogPath -Tail 40 | ForEach-Object { Write-Host "    $_" }

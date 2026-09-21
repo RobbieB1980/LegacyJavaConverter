@@ -31,7 +31,7 @@ public sealed class MainForm : Form
     private readonly Button _btnBrowseOut = NewButton("Browse...", 110);
     private readonly Button _btnRun = NewButton("Convert", 130);
     private readonly Button _btnOpenOut = NewButton("Open output", 130);
-    private readonly Button _btnFixGrok = NewButton("Fix in Grok", 130);
+    private readonly Button _btnRepairGokuCodexAI = NewButton("Repair with GokuCodexAI", 190);
     private readonly Button _btnClear = NewButton("Clear log", 120);
     private readonly ProgressBar _progress = new()
     {
@@ -216,12 +216,12 @@ public sealed class MainForm : Form
         _btnOpenOut.Enabled = false;
         _btnOpenOut.Height = 36;
 
-        _btnFixGrok.Dock = DockStyle.Fill;
-        _btnFixGrok.Margin = new Padding(0, 4, 8, 4);
-        _btnFixGrok.Enabled = false;
-        _btnFixGrok.Height = 36;
-        _btnFixGrok.BackColor = Color.FromArgb(50, 70, 120);
-        _btnFixGrok.FlatAppearance.BorderColor = Color.FromArgb(90, 120, 180);
+        _btnRepairGokuCodexAI.Dock = DockStyle.Fill;
+        _btnRepairGokuCodexAI.Margin = new Padding(0, 4, 8, 4);
+        _btnRepairGokuCodexAI.Enabled = false;
+        _btnRepairGokuCodexAI.Height = 36;
+        _btnRepairGokuCodexAI.BackColor = Color.FromArgb(50, 70, 120);
+        _btnRepairGokuCodexAI.FlatAppearance.BorderColor = Color.FromArgb(90, 120, 180);
 
         _btnClear.Dock = DockStyle.Fill;
         _btnClear.Margin = new Padding(0, 4, 8, 4);
@@ -229,7 +229,7 @@ public sealed class MainForm : Form
 
         actions.Controls.Add(_btnRun, 0, 0);
         actions.Controls.Add(_btnOpenOut, 1, 0);
-        actions.Controls.Add(_btnFixGrok, 2, 0);
+        actions.Controls.Add(_btnRepairGokuCodexAI, 2, 0);
         actions.Controls.Add(_btnClear, 3, 0);
         actions.Controls.Add(_progress, 4, 0);
 
@@ -323,7 +323,7 @@ public sealed class MainForm : Form
             else
                 MessageBox.Show(this, "Output does not exist yet.", "Open output", MessageBoxButtons.OK, MessageBoxIcon.Information);
         };
-        _btnFixGrok.Click += (_, _) => LaunchGrokRepairSession(offerPrompt: false);
+        _btnRepairGokuCodexAI.Click += (_, _) => LaunchCodexRepairSession(offerPrompt: false);
         _btnClear.Click += (_, _) => _log.Clear();
 
         Shown += (_, _) =>
@@ -595,7 +595,7 @@ public sealed class MainForm : Form
         _btnRun.Enabled = !busy;
         _btnBrowseIn.Enabled = !busy;
         _btnBrowseOut.Enabled = !busy;
-        _btnFixGrok.Enabled = !busy && !string.IsNullOrWhiteSpace(_lastOutput) && Directory.Exists(_lastOutput);
+        _btnRepairGokuCodexAI.Enabled = !busy && !string.IsNullOrWhiteSpace(_lastOutput) && Directory.Exists(_lastOutput);
         _txtInput.Enabled = !busy;
         _txtOutput.Enabled = !busy;
         _txtNeo.Enabled = !busy;
@@ -613,7 +613,7 @@ public sealed class MainForm : Form
             _chkCompile.Enabled = false;
             _chkDry.Enabled = false;
             _chkContinueNeo.Enabled = false;
-            _btnFixGrok.Enabled = false;
+            _btnRepairGokuCodexAI.Enabled = false;
         }
         else
         {
@@ -860,11 +860,11 @@ public sealed class MainForm : Form
                 {
                     AppendLog("The conversion scaffold was preserved for repair.", Color.Gold);
                     _btnOpenOut.Enabled = true;
-                    _btnFixGrok.Enabled = true;
+                    _btnRepairGokuCodexAI.Enabled = true;
                     if (File.Exists(Path.Combine(_lastOutput, "compile-errors.log")))
                         AppendLog("See compile-errors.log for the first remaining build error.", Color.Khaki);
-                    AppendLog("Click \"Fix in Grok\" to open GokuAI with primers/cases first.", Color.Khaki);
-                    LaunchGrokRepairSession(offerPrompt: true);
+                    AppendLog("Click \"Repair with GokuCodexAI\" to open Codex with the complete repair evidence.", Color.Khaki);
+                    LaunchCodexRepairSession(offerPrompt: true);
                 }
             }
             try { _running.Dispose(); } catch { /* ignore */ }
@@ -873,16 +873,13 @@ public sealed class MainForm : Form
         _pollTimer.Start();
     }
 
-    /// <summary>
-    /// Opens C:\gokuai\Start-GokuAI.ps1 against the GokuAI converter workspace,
-    /// with a prompt that forces MIGRATION_EVIDENCE / primers / CASE files before inventing fixes.
-    /// </summary>
-    private void LaunchGrokRepairSession(bool offerPrompt)
+    /// <summary>Prepares the failed output and opens Codex as the GokuCodexAI repair orchestrator.</summary>
+    private void LaunchCodexRepairSession(bool offerPrompt)
     {
         var output = string.IsNullOrWhiteSpace(_lastOutput) ? _txtOutput.Text.Trim() : _lastOutput;
         if (string.IsNullOrWhiteSpace(output) || !Directory.Exists(output))
         {
-            MessageBox.Show(this, "No conversion output folder to repair yet.", "Fix in Grok",
+            MessageBox.Show(this, "No conversion output folder to repair yet.", "Repair with GokuCodexAI",
                 MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
@@ -891,105 +888,56 @@ public sealed class MainForm : Form
         {
             var ask = MessageBox.Show(this,
                 "Conversion failed but a scaffold was written.\n\n" +
-                "Open GokuAI (C:\\gokuai) to repair it?\n" +
-                "The session will be instructed to read MIGRATION_EVIDENCE, primers, and CASE files BEFORE inventing fixes.",
-                "Fix in GokuAI",
+                "Open GokuCodexAI to repair it?\n" +
+                "Codex will receive the conversion evidence, native vNext skill, Solutions Index, and exact 26.2 knowledge before fresh reasoning.",
+                "Repair with GokuCodexAI",
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Question);
             if (ask != DialogResult.Yes) return;
         }
 
-        const string gokuRoot = @"C:\gokuai";
-        var startGoku = Path.Combine(gokuRoot, "Start-GokuAI.ps1");
-        var workspace = Path.Combine(gokuRoot, "projects", "RB-Legacy-Java-Converter");
-        if (!File.Exists(startGoku))
+        const string gokuRoot = @"C:\GokuCodexAI";
+        var packagedLauncher = Path.Combine(AppContext.BaseDirectory, "tools", "Open-CodexRepairSession.ps1");
+        var adjacentLauncher = Path.Combine(AppContext.BaseDirectory, "Open-CodexRepairSession.ps1");
+        var launcher = File.Exists(packagedLauncher) ? packagedLauncher : adjacentLauncher;
+        if (!File.Exists(launcher))
         {
             MessageBox.Show(this,
-                "Start-GokuAI.ps1 was not found at:\n" + startGoku +
-                "\n\nInstall/update GokuAI first (C:\\gokuai).",
-                "Fix in Grok", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                "Open-CodexRepairSession.ps1 was not found in the installed converter tools.\n\n" +
+                "Reinstall or update LegacyJavaConverter 3.0.0.",
+                "Repair with GokuCodexAI", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
-        if (!Directory.Exists(workspace))
+        if (!Directory.Exists(gokuRoot))
         {
             MessageBox.Show(this,
-                "Converter workspace missing:\n" + workspace,
-                "Fix in Grok", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                "GokuCodexAI was not found at:\n" + gokuRoot,
+                "Repair with GokuCodexAI", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
 
         try
         {
-            var promptPath = Path.Combine(output, "GROK_REPAIR_PROMPT.md");
-            File.WriteAllText(promptPath, BuildGrokRepairPrompt(output), new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
-
             var args =
-                "-NoExit -ExecutionPolicy Bypass -File " + Quote(startGoku) +
-                " -ProjectPath " + Quote(workspace) +
-                " -Root " + Quote(gokuRoot) +
-                " -PromptFile " + Quote(promptPath);
+                "-NoProfile -ExecutionPolicy Bypass -File " + Quote(launcher) +
+                " -FailedOutput " + Quote(output) +
+                " -GokuRoot " + Quote(gokuRoot);
 
             Process.Start(new ProcessStartInfo
             {
                 FileName = "powershell.exe",
                 Arguments = args,
                 UseShellExecute = true,
-                WorkingDirectory = workspace
+                WorkingDirectory = output
             });
 
-            AppendLog("Launched Start-GokuAI.ps1 for repair.", Color.LightSkyBlue);
-            AppendLog("Workspace: " + workspace, Color.DimGray);
-            AppendLog("Prompt file: " + promptPath, Color.DimGray);
+            AppendLog("Opened the GokuCodexAI repair preparation.", Color.LightSkyBlue);
+            AppendLog("Failed output: " + output, Color.DimGray);
         }
         catch (Exception ex)
         {
-            AppendLog("Failed to launch GokuAI: " + ex.Message, Color.Salmon);
-            MessageBox.Show(this, ex.Message, "Fix in Grok", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            AppendLog("Failed to launch GokuCodexAI: " + ex.Message, Color.Salmon);
+            MessageBox.Show(this, ex.Message, "Repair with GokuCodexAI", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
-    }
-
-    private static string BuildGrokRepairPrompt(string failedOutput)
-    {
-        var evidence = Path.Combine(failedOutput, "MIGRATION_EVIDENCE.md");
-        var profile = Path.Combine(failedOutput, "SOURCE_PROFILE.json");
-        var errors = Path.Combine(failedOutput, "compile-errors.log");
-        var solved = @"C:\gokuai\Data\Solved_Problems\legacy-java-converter-26.2";
-        var primers = @"C:\gokuai\Data\NeoForge_Primers\26.2";
-
-        var buildHelper = @"C:\gokuai\projects\RB-Legacy-Java-Converter\tools\Build-WithDestinationJava.ps1";
-        var packet = Path.Combine(failedOutput, "EVIDENCE_PACKET.md");
-        return
-            "You are repairing a failed RB Legacy Java Converter -> NeoForge 26.2 run.\n\n" +
-            "FAILED OUTPUT FOLDER:\n" + failedOutput + "\n\n" +
-            "SKILLS / AGENTS (use these - do not reinvent process):\n" +
-            "- Prefer /repair-failed-262-output for this task.\n" +
-            "- Fill " + packet + " from .grok/skills/repair-failed-262-output/references/evidence-packet-template.md (cap ~9k chars).\n" +
-            "- Validation: /validate-destination-build or Build-WithDestinationJava.ps1.\n" +
-            "- Reusable fixes: /encode-262r-remap.\n" +
-            "- Optional workflow: /repair-neoforge-262 with args.failed_output.\n" +
-            "- Subagents: mc-research -> mc-fast/mc-code -> mc-reviewer (one at a time; packet required).\n" +
-            "- Standing orders: project Agents.md. Do not install unrelated process plugins for this repair.\n\n" +
-            "MANDATORY ORDER - do this BEFORE inventing any fix or writing Java:\n" +
-            "1. Read project AGENTS.md and the newest SESSION-CONTINUE-*.md under:\n   " + solved + "\n" +
-            "2. Read these files in the failed output (if present):\n" +
-            "   - " + evidence + "\n" +
-            "   - " + profile + "\n" +
-            "   - " + errors + "\n" +
-            "3. Create/update " + packet + ".\n" +
-            "4. Search 262r first (one shard) under C:\\gokuai\\Data\\262r then solved cases in:\n   " + solved + "\n" +
-            "5. From SOURCE_PROFILE / MIGRATION_EVIDENCE, open ONLY the matching primer_changes ledger under:\n   " + primers + "\n" +
-            "   (one shard at a time). Do NOT dump every full primer.\n" +
-            "6. Confirm APIs against exact NeoForge/Minecraft 26.2 sources, then fix.\n" +
-            "7. Prefer encoding durable remaps into tools/Convert-Forge1201-ToNeoForge262.ps1 / 262r over one-off patches.\n" +
-            "8. Success = destination-Java gradlew build producing build/libs/*.jar (not compileJava alone).\n\n" +
-            "DESTINATION JAVA / GRADLE (mandatory - do this on EVERY validation build):\n" +
-            "- NeoForge 26.2 destination JDK major is **25**. Never probe with ambient/source JAVA_HOME (often Java 8) first.\n" +
-            "- Before the first gradlew in this session, pin destination Java:\n" +
-            "  powershell -NoProfile -File " + buildHelper + " -ProjectRoot \"" + failedOutput + "\"\n" +
-            "- Ensure org.gradle.java.home in the failed output gradle.properties points at JDK 25+.\n" +
-            "- Do not treat 'Gradle requires JVM 17+ ... configured to use JVM 8' as a project compile error - wrong JDK; re-run with destination Java.\n" +
-            "- Use the project wrapper (gradlew.bat) only.\n\n" +
-            "Do not invent a permanent client renderer compile-gate when the primer Entity Render State / submit path is unfinished.\n" +
-            "Start now by reading the evidence files and stating the detected source version + applicable primer ledger. Prefer /repair-failed-262-output.";
     }
 }
