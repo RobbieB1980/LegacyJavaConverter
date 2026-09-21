@@ -40,6 +40,7 @@ $ErrorActionPreference = 'Stop'
 $ToolRoot = $PSScriptRoot
 . (Join-Path $ToolRoot 'lib\ModDependencyPipeline.ps1')
 . (Join-Path $ToolRoot 'lib\ConversionCore.ps1')
+. (Join-Path $ToolRoot 'lib\Minecraft262HardenedTransforms.ps1')
 
 function Write-Step([string]$m) { Write-Host ""; Write-Host "==> $m" -ForegroundColor Cyan }
 function Write-Ok([string]$m) { Write-Host "    $m" -ForegroundColor Green }
@@ -2206,6 +2207,7 @@ function Invoke-Minecraft262CompileRepairPass {
         }
         # Vineflower/sword attack-speed token lost as bare F
         $t = $t -replace '\.sword\(\s*TOOL_MATERIAL\s*,\s*([0-9.]+F)\s*,\s*F\s*\)', '.sword(TOOL_MATERIAL, $1, -0.8F)'
+        $t = Convert-Minecraft262LeafApiText -Text $t
 
         # CASE-005 MobEffect 26.2 — MUST live in this pass (runs for every route).
         # Previously only in Invoke-McreatorForge1201ResiduePass (gated on mcreator-1.20.1),
@@ -3992,6 +3994,26 @@ function Invoke-Minecraft262RecipeIngredientPass {
     return $touched
 }
 
+function Invoke-Minecraft262TreeConfiguredFeaturePass {
+    [CmdletBinding()]
+    param([string]$Root)
+
+    $dataRoot = Join-Path $Root 'src\main\resources\data'
+    if (-not (Test-Path -LiteralPath $dataRoot)) { return 0 }
+    $touched = 0
+    $files = Get-ChildItem -LiteralPath $dataRoot -Recurse -Filter '*.json' -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -match '[\\/]worldgen[\\/]configured_feature[\\/]' }
+    foreach ($file in @($files)) {
+        $original = [IO.File]::ReadAllText($file.FullName)
+        $converted = Convert-Minecraft262TreeConfiguredFeatureDocument -JsonText $original
+        if ($converted -ne $original.TrimEnd()) {
+            [IO.File]::WriteAllText($file.FullName, $converted)
+            $touched++
+        }
+    }
+    return $touched
+}
+
 function Invoke-Minecraft262ItemModelPass {
     <#
     .SYNOPSIS
@@ -4024,6 +4046,18 @@ function Invoke-Minecraft262ItemModelPass {
             if ($t -ne $o) {
                 [IO.File]::WriteAllText($f.FullName, $t)
                 $touched++
+            }
+        }
+        $clientItems = Join-Path $nsDir.FullName 'items'
+        foreach ($f in @(Get-ChildItem -LiteralPath $clientItems -Filter '*.json' -File -ErrorAction SilentlyContinue)) {
+            $original = [IO.File]::ReadAllText($f.FullName)
+            $converted = Convert-Minecraft262ClientItemDocument -JsonText $original -ModId $modid
+            if ($converted -ne $original.TrimEnd()) {
+                $usedTemplate = $true
+                [IO.File]::WriteAllText($f.FullName, $converted)
+                $touched++
+            } elseif ($converted -match [regex]::Escape("${modid}:item/template_spawn_egg")) {
+                $usedTemplate = $true
             }
         }
         foreach ($f in @(Get-ChildItem -LiteralPath (Join-Path $nsDir.FullName 'models\block') -Filter '*.json' -File -ErrorAction SilentlyContinue)) {
@@ -4352,6 +4386,10 @@ Write-Ok "Created $ci client item file(s)"
 Write-Step '26.2 item model parents + restore template_spawn_egg'
 $itemModels = Invoke-Minecraft262ItemModelPass -Root $OutputPath -ToolRoot $ToolRoot
 Write-Ok "Item-model-touched $itemModels file(s)"
+
+Write-Step '26.2 tree configured_feature dirt_provider -> below_trunk_provider'
+$treeCf = Invoke-Minecraft262TreeConfiguredFeaturePass -Root $OutputPath
+Write-Ok "Tree-configured-feature-touched $treeCf file(s)"
 
 Write-Step 'Gradle wrapper'
 Install-WrapperFromTowwOrMdk -Root $OutputPath

@@ -4,6 +4,7 @@ param()
 $ErrorActionPreference = 'Stop'
 $repo = Resolve-Path (Join-Path $PSScriptRoot '..')
 . (Join-Path $repo 'lib\ConversionCore.ps1')
+. (Join-Path $repo 'lib\Minecraft262HardenedTransforms.ps1')
 
 $script:passed = 0
 function Assert-Equal([object]$Actual, [object]$Expected, [string]$Name) {
@@ -72,6 +73,31 @@ finally {
 
 $sample = 'BLOCKS.register(name, block)'
 Assert-Equal (Convert-CustomBlockRegistrationText $sample) $sample 'unmatched block helper unchanged'
+
+$hardenedFixtures = Join-Path $repo 'tests\fixtures\hardened-262'
+$leafInput = Get-Content (Join-Path $hardenedFixtures 'leaf-api\input.java') -Raw
+$leafExpected = (Get-Content (Join-Path $hardenedFixtures 'leaf-api\expected.java') -Raw).TrimEnd()
+$leafActual = Convert-Minecraft262LeafApiText -Text $leafInput
+Assert-Equal $leafActual $leafExpected 'installed leaf API wave'
+Assert-Equal (Convert-Minecraft262LeafApiText -Text $leafActual) $leafActual 'leaf API wave idempotence'
+
+$treeInput = Get-Content (Join-Path $hardenedFixtures 'tree-feature\input.json') -Raw
+$treeActual = Convert-Minecraft262TreeConfiguredFeatureDocument -JsonText $treeInput
+$treeDocument = $treeActual | ConvertFrom-Json
+Assert-Equal $treeDocument.type 'minecraft:tree' 'tree configured feature type preserved'
+Assert-Equal $treeDocument.custom_flag 'preserve-me' 'tree configured feature unrelated property preserved'
+Assert-Equal $treeDocument.config.below_trunk_provider.type 'minecraft:rule_based_state_provider' 'tree below-trunk provider created'
+Assert-Equal $treeDocument.config.below_trunk_provider.rules[0].then.state.Name 'minecraft:podzol' 'tree dirt state preserved'
+Assert-True ($null -eq $treeDocument.config.PSObject.Properties['dirt_provider']) 'legacy dirt provider removed'
+Assert-True ($null -eq $treeDocument.config.PSObject.Properties['force_dirt']) 'legacy force_dirt removed'
+Assert-Equal (Convert-Minecraft262TreeConfiguredFeatureDocument -JsonText $treeActual) $treeActual 'tree configured feature idempotence'
+
+$clientItemInput = Get-Content (Join-Path $hardenedFixtures 'client-item\input.json') -Raw
+$clientItemActual = Convert-Minecraft262ClientItemDocument -JsonText $clientItemInput -ModId 'example'
+$clientItemDocument = $clientItemActual | ConvertFrom-Json
+Assert-Equal $clientItemDocument.model.model 'example:item/template_spawn_egg' 'client item spawn egg migrated'
+Assert-Equal $clientItemDocument.comment 'minecraft:item/template_spawn_egg' 'unrelated spawn egg string preserved'
+Assert-Equal (Convert-Minecraft262ClientItemDocument -JsonText $clientItemActual -ModId 'example') $clientItemActual 'client item spawn egg idempotence'
 
 foreach ($file in Get-ChildItem -LiteralPath $repo -Recurse -Filter '*.ps1' -File) {
     $tokens = $null
