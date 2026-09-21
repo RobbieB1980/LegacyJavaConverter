@@ -15,7 +15,8 @@
 [CmdletBinding()]
 param(
     [string]$Configuration = 'Release',
-    [string]$Runtime = 'win-x64'
+    [string]$Runtime = 'win-x64',
+    [switch]$SkipWorkspaceSync
 )
 
 $ErrorActionPreference = 'Stop'
@@ -192,7 +193,7 @@ Get-ChildItem $Dist -File | Format-Table Name, @{N='MB';E={[math]::Round($_.Leng
 
 # Keep Fix-in-Grok workspace skills/agents in sync on this machine
 $sync = Join-Path $PSScriptRoot 'Sync-GokuaiConverterWorkspace.ps1'
-if (Test-Path -LiteralPath $sync) {
+if (-not $SkipWorkspaceSync -and (Test-Path -LiteralPath $sync)) {
     Write-Host "==> Syncing GokuAI Fix-in-Grok workspace overlay" -ForegroundColor Cyan
     & powershell -NoProfile -ExecutionPolicy Bypass -File $sync -RepoRoot $RepoRoot
 }
