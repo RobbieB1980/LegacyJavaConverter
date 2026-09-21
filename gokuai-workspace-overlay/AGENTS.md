@@ -5,6 +5,11 @@
 Codex is the repair orchestrator. It owns routing, evidence selection, worker
 delegation, integration, validation, and promotion of reusable fixes.
 
+The primary route is Luna High (`gpt-5.6-luna-high`, high reasoning). For hard
+issues, repeated failures, conflicting evidence, or an orchestrator failure,
+preserve the evidence and hand off to Sol Medium (`gpt-5.6-sol-medium`, medium
+reasoning). KAT and Qwen remain optional bounded local workers.
+
 The target is NeoForge 26.2 only. Detect the actual source version and reject
 pre-1.20.1 inputs. Do not silently retarget a repair to 26.3.
 

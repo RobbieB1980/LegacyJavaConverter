@@ -7,12 +7,21 @@ param(
     [Parameter(Mandatory)][string]$FailedOutput,
     [string]$GokuRoot = 'C:\GokuCodexAI',
     [string]$CodexPath,
+    [ValidateSet('primary', 'fallback')][string]$Route = 'primary',
     [switch]$PrepareOnly
 )
 
 $ErrorActionPreference = 'Stop'
 $failed = (Resolve-Path -LiteralPath $FailedOutput).Path
 $goku = (Resolve-Path -LiteralPath $GokuRoot).Path
+$routingPath = Join-Path $goku 'config\gokuai.json'
+if (-not (Test-Path -LiteralPath $routingPath -PathType Leaf)) { throw "GokuCodexAI routing configuration missing: $routingPath" }
+$routing = Get-Content -LiteralPath $routingPath -Raw | ConvertFrom-Json
+if (-not $routing.codex_orchestrator) { throw "codex_orchestrator is missing from $routingPath" }
+$selectedRoute = $routing.codex_orchestrator.$Route
+$fallbackRoute = $routing.codex_orchestrator.fallback
+if (-not $selectedRoute -or [string]::IsNullOrWhiteSpace([string]$selectedRoute.model)) { throw "codex_orchestrator.$Route is incomplete" }
+if (-not $fallbackRoute -or [string]::IsNullOrWhiteSpace([string]$fallbackRoute.model)) { throw 'codex_orchestrator.fallback is incomplete' }
 
 $sync = @(
     (Join-Path $PSScriptRoot 'Sync-CodexConverterWorkspace.ps1'),
@@ -56,8 +65,11 @@ if (-not $codex) {
     throw 'Codex CLI could not be located. Open the Codex desktop app once, then retry Repair with GokuCodexAI.'
 }
 
-$openingPrompt = "Use the legacy-java-converter-vnext skill. Read '$request' and AGENTS.md, then own the deterministic-first repair and separate build/runtime validation for this failed output."
+$openingPrompt = "Use the legacy-java-converter-vnext skill. Read '$request' and AGENTS.md, then own the deterministic-first repair and separate build/runtime validation for this failed output. You are the repair orchestrator running on $($selectedRoute.label) ($($selectedRoute.model), $($selectedRoute.reasoning_effort) reasoning). For hard issues or an orchestrator failure, preserve the evidence and rerun this handoff on $($fallbackRoute.label) ($($fallbackRoute.model), $($fallbackRoute.reasoning_effort) reasoning)."
+$reasoning = 'model_reasoning_effort="' + [string]$selectedRoute.reasoning_effort + '"'
 $codexArguments = @(
+    '-m', [string]$selectedRoute.model,
+    '-c', $reasoning,
     '-C', $failed,
     '--add-dir', $goku,
     '-s', 'workspace-write',
@@ -70,6 +82,9 @@ $result = [pscustomobject]@{
     FailedOutput = $failed
     RequestFile = $request
     CodexPath = $codex
+    Route = $Route
+    Model = [string]$selectedRoute.model
+    FallbackModel = [string]$fallbackRoute.model
     Arguments = $codexArguments
 }
 if ($PrepareOnly) {

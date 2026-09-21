@@ -29,7 +29,9 @@ GUI or run:
 The launcher writes `CODEX_REPAIR_REQUEST.md`, installs native Codex guidance
 and skills into the failed output, configures the local Minecraft knowledge
 MCP from `C:\GokuCodexAI`, and opens Codex as the repair orchestrator. The
-NeoForge target remains 26.2. Local KAT/Qwen workers are optional.
+NeoForge target remains 26.2. Luna High (`gpt-5.6-luna-high`) is the primary
+route; hard issues and failures fall back to Sol Medium
+(`gpt-5.6-sol-medium`). Local KAT/Qwen workers are optional.
 
 ## Finished NeoForge 1.21.x jar → 26.2 scaffold
 
