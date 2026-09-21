@@ -99,6 +99,56 @@ Assert-Equal $clientItemDocument.model.model 'example:item/template_spawn_egg' '
 Assert-Equal $clientItemDocument.comment 'minecraft:item/template_spawn_egg' 'unrelated spawn egg string preserved'
 Assert-Equal (Convert-Minecraft262ClientItemDocument -JsonText $clientItemActual -ModId 'example') $clientItemActual 'client item spawn egg idempotence'
 
+$versionPropsPath = Join-Path $repo 'eng\Version.props'
+$portableManifestPath = Join-Path $repo 'eng\portable-manifest.json'
+$portableValidatorPath = Join-Path $repo 'scripts\Test-PortableManifest.ps1'
+Assert-True (Test-Path -LiteralPath $versionPropsPath) 'shared version properties exist'
+Assert-True (Test-Path -LiteralPath $portableManifestPath) 'portable manifest exists'
+Assert-True (Test-Path -LiteralPath $portableValidatorPath) 'portable manifest validator exists'
+
+[xml]$versionProps = Get-Content -LiteralPath $versionPropsPath -Raw
+Assert-Equal $versionProps.Project.PropertyGroup.Version '2.11.0' 'shared product version'
+Assert-Equal $versionProps.Project.PropertyGroup.FileVersion '2.11.0.0' 'shared file version'
+Assert-Equal $versionProps.Project.PropertyGroup.InformationalVersion '2.11.0-vnext.1' 'shared informational version'
+foreach ($projectPath in @('src\RB.LegacyJavaConverter\RB.LegacyJavaConverter.csproj', 'src\RB.LegacyJavaConverter.Setup\RB.LegacyJavaConverter.Setup.csproj')) {
+    [xml]$project = Get-Content -LiteralPath (Join-Path $repo $projectPath) -Raw
+    $versionImport = @($project.Project.Import | Where-Object { $_.Project -eq '..\..\eng\Version.props' })
+    Assert-Equal $versionImport.Count 1 "shared version import $projectPath"
+    Assert-True ($null -eq $project.Project.PropertyGroup.Version) "no literal product version $projectPath"
+}
+Assert-Equal ((Get-Content -LiteralPath (Join-Path $repo 'version.txt') -Raw).Trim()) '2.11.0' 'tracked version matches shared product version'
+
+$portableManifest = Get-Content -LiteralPath $portableManifestPath -Raw | ConvertFrom-Json
+$manifestSources = @($portableManifest.entries | ForEach-Object { $_.sourcePath })
+foreach ($requiredSource in @(
+    'Convert-Forge1201-ToNeoForge262.ps1', 'Convert-JarToProject.ps1', 'Convert-OldJarToNeoForge262.ps1',
+    'Open-GrokRepairSession.ps1', 'Build-WithDestinationJava.ps1', 'Lint-MigrationSkills.ps1',
+    'lib/SolvedConversionIndex.json', 'lib/PrimerChangeIndex.json', 'lib/DependencyCatalog.json',
+    'lib/overlays', 'lib/client-items', 'lib/primer_changes', 'lib/dep_changes', 'docs'
+)) {
+    Assert-True ($manifestSources -contains $requiredSource) "portable manifest source $requiredSource"
+}
+
+$manifestFixture = Join-Path ([IO.Path]::GetTempPath()) ('legacy-portable-manifest-test-' + [guid]::NewGuid().ToString('N'))
+try {
+    New-Item -ItemType Directory -Path $manifestFixture -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $manifestFixture 'version.txt') -Value '2.11.0' -Encoding ASCII
+    $previousErrorAction = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $validatorOutput = & powershell -NoProfile -ExecutionPolicy Bypass -File $portableValidatorPath -Root $manifestFixture -ManifestPath $portableManifestPath -Layout Portable 2>&1 | Out-String
+        $validatorExit = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorAction
+    }
+    Assert-True ($validatorExit -ne 0) 'portable validator rejects incomplete layout'
+    Assert-True ($validatorOutput -match 'RB-Legacy-Java-Converter.exe') 'portable validator reports missing executable'
+}
+finally {
+    if (Test-Path -LiteralPath $manifestFixture) { Remove-Item -LiteralPath $manifestFixture -Recurse -Force }
+}
+
 foreach ($file in Get-ChildItem -LiteralPath $repo -Recurse -Filter '*.ps1' -File) {
     $tokens = $null
     $errors = $null

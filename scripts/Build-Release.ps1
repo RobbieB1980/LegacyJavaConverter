@@ -24,6 +24,8 @@ $Dist = Join-Path $RepoRoot 'dist'
 $PortableRoot = Join-Path $Dist 'portable\RB-Legacy-Java-Converter'
 $GuiProj = Join-Path $RepoRoot 'src\RB.LegacyJavaConverter\RB.LegacyJavaConverter.csproj'
 $SetupProj = Join-Path $RepoRoot 'src\RB.LegacyJavaConverter.Setup\RB.LegacyJavaConverter.Setup.csproj'
+$ManifestPath = Join-Path $RepoRoot 'eng\portable-manifest.json'
+$ManifestValidator = Join-Path $RepoRoot 'scripts\Test-PortableManifest.ps1'
 
 function Remove-TreeLongPath([string]$Target) {
     $resolvedTarget = [IO.Path]::GetFullPath($Target)
@@ -35,6 +37,10 @@ function Remove-TreeLongPath([string]$Target) {
         [IO.Directory]::Delete('\\?\' + $resolvedTarget, $true)
     }
 }
+
+Write-Host "==> Validating release source manifest" -ForegroundColor Cyan
+& powershell -NoProfile -ExecutionPolicy Bypass -File $ManifestValidator -Root $RepoRoot -ManifestPath $ManifestPath -Layout Repository
+if ($LASTEXITCODE -ne 0) { throw "Release source manifest validation failed" }
 
 Write-Host "==> Cleaning dist" -ForegroundColor Cyan
 if (Test-Path $Dist) { Remove-TreeLongPath $Dist }
@@ -120,19 +126,15 @@ if (Test-Path $ico) {
     Write-Host "    app.ico (from assets)"
 }
 
-$versionFile = Join-Path $RepoRoot 'version.txt'
-if (-not (Test-Path $versionFile)) {
-    # Fall back to GUI csproj Version when version.txt is absent.
-    $guiCsproj = Join-Path $RepoRoot 'src\RB.LegacyJavaConverter\RB.LegacyJavaConverter.csproj'
-    $ver = '2.10.5'
-    if (Test-Path $guiCsproj) {
-        $m = Select-String -Path $guiCsproj -Pattern '<Version>([^<]+)</Version>' | Select-Object -First 1
-        if ($m) { $ver = $m.Matches[0].Groups[1].Value }
-    }
-    Set-Content -LiteralPath $versionFile -Value $ver -Encoding ascii
-}
-Copy-Item $versionFile (Join-Path $PortableRoot 'version.txt') -Force
+[xml]$versionProps = Get-Content -LiteralPath (Join-Path $RepoRoot 'eng\Version.props') -Raw
+$ver = [string]$versionProps.Project.PropertyGroup.Version
+if ([string]::IsNullOrWhiteSpace($ver)) { throw 'Version missing from eng/Version.props' }
+Set-Content -LiteralPath (Join-Path $PortableRoot 'version.txt') -Value $ver -Encoding ASCII
 Write-Host "    version.txt = $((Get-Content -LiteralPath (Join-Path $PortableRoot 'version.txt') -Raw).Trim())"
+
+Write-Host "==> Validating assembled portable manifest" -ForegroundColor Cyan
+& powershell -NoProfile -ExecutionPolicy Bypass -File $ManifestValidator -Root $PortableRoot -ManifestPath $ManifestPath -Layout Portable
+if ($LASTEXITCODE -ne 0) { throw "Assembled portable manifest validation failed" }
 
 Write-Host "==> Creating portable ZIP" -ForegroundColor Cyan
 $portableZip = Join-Path $Dist 'RB-Legacy-Java-Converter-Portable.zip'

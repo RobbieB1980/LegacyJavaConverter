@@ -1,0 +1,7 @@
+<Project>
+  <PropertyGroup>
+    <Version>2.11.0</Version>
+    <FileVersion>2.11.0.0</FileVersion>
+    <InformationalVersion>2.11.0-vnext.1</InformationalVersion>
+  </PropertyGroup>
+</Project>

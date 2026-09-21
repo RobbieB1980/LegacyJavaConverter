@@ -1,5 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <Import Project="..\..\eng\Version.props" />
+
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
@@ -11,9 +13,6 @@
     <ApplicationIcon>..\..\assets\app.ico</ApplicationIcon>
     <Product>RB Legacy Java Converter Setup</Product>
     <Company>RobbieB1980</Company>
-    <Version>2.10.13</Version>
-    <FileVersion>2.10.13</FileVersion>
-    <InformationalVersion>2.10.13</InformationalVersion>
     <Description>Installer for RB Legacy Java Converter (portable toolset)</Description>
   </PropertyGroup>
 

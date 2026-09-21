@@ -1,5 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <Import Project="..\..\eng\Version.props" />
+
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows</TargetFramework>
@@ -11,9 +13,6 @@
     <ApplicationIcon>..\..\assets\app.ico</ApplicationIcon>
     <Product>RB Legacy Java Converter</Product>
     <Company>RobbieB1980</Company>
-    <Version>2.10.13</Version>
-    <FileVersion>2.10.13</FileVersion>
-    <InformationalVersion>2.10.13</InformationalVersion>
     <Description>Convert Forge 1.20.1 / NeoForge 1.21.x Java mod jars and workspaces to NeoForge 26.2 scaffolds</Description>
   </PropertyGroup>
 
